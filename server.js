@@ -45,6 +45,12 @@ db.exec(`
     user_id INTEGER NOT NULL REFERENCES users(id),
     data TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS invite_codes (
+    code TEXT PRIMARY KEY,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    used_by INTEGER REFERENCES users(id),
+    used_at TEXT
+  );
 `);
 
 // ── Auth-Token (HMAC-signiert, im httpOnly-Cookie) ──
@@ -94,13 +100,18 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ── Auth-Endpunkte ──
 app.post("/api/register", (req, res) => {
-  const { name, email, password } = req.body || {};
+  const { name, email, password, invite } = req.body || {};
   if (!name || !email || !email.includes("@")) return res.status(400).json({ error: "Name und gültige E-Mail angeben." });
   if (!password || password.length < 8) return res.status(400).json({ error: "Passwort braucht mindestens 8 Zeichen." });
+  const code = (invite || "").trim().toUpperCase();
+  const inviteRow = db.prepare("SELECT code FROM invite_codes WHERE code = ? AND used_by IS NULL").get(code);
+  if (!inviteRow) return res.status(403).json({ error: "Ungültiger oder bereits verwendeter Einladungscode." });
   const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email.toLowerCase());
   if (existing) return res.status(409).json({ error: "Diese E-Mail ist bereits registriert." });
   const info = db.prepare("INSERT INTO users (email, name, pass_hash) VALUES (?, ?, ?)")
     .run(email.toLowerCase(), name, bcrypt.hashSync(password, 10));
+  db.prepare("UPDATE invite_codes SET used_by = ?, used_at = datetime('now') WHERE code = ?")
+    .run(info.lastInsertRowid, code);
   setAuthCookie(res, signToken(info.lastInsertRowid));
   res.status(201).json({ id: info.lastInsertRowid, name, email: email.toLowerCase() });
 });

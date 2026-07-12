@@ -4,7 +4,8 @@
   "description": "Trainingsplaner für Volleyball-Coaches",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "invite": "node scripts/invite.js"
   },
   "license": "ISC",
   "dependencies": {

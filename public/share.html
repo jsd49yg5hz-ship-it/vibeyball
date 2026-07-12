@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Geteilter Trainingsplan – VibeyBall</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem("vb-theme") ||
+      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  </script>
   <link rel="stylesheet" href="../styles.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏐</text></svg>">
 </head>
@@ -11,6 +15,7 @@
 
   <header class="app-header">
     <h1>🏐 VibeyBall <span class="subtitle">Geteilter Trainingsplan</span></h1>
+    <button class="btn btn-header btn-theme" id="btn-theme" title="Hell/Dunkel umschalten">🌙</button>
   </header>
 
   <main class="view">
@@ -38,6 +43,15 @@
   <script src="../pdf.js"></script>
   <script>
     const $ = (sel) => document.querySelector(sel);
+
+    // Theme-Umschalter
+    $("#btn-theme").textContent = document.documentElement.dataset.theme === "dark" ? "☀️" : "🌙";
+    $("#btn-theme").addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      localStorage.setItem("vb-theme", next);
+      document.documentElement.dataset.theme = next;
+      $("#btn-theme").textContent = next === "dark" ? "☀️" : "🌙";
+    });
 
     function esc(str) {
       const div = document.createElement("div");

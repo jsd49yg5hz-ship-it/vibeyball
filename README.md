@@ -7,7 +7,10 @@ gestaltetes PDF exportieren. Mit Login und zentraler Speicherung auf dem eigenen
 ## Features
 
 - **Konten & zentrale Speicherung**: Registrierung/Login, alle Daten liegen zentral in
-  einer SQLite-Datenbank auf dem Server (kein localStorage).
+  einer SQLite-Datenbank auf dem Server (kein localStorage). Die Registrierung ist durch
+  **Einladungscodes** geschützt (`npm run invite`).
+- **Dark Mode & warmes Theme**: folgt automatisch der Systemeinstellung, mit manuellem
+  Hell/Dunkel-Umschalter im Header; Sand-/Orangetöne auf dunklem Blau.
 - **Trainingssessions** mit Titel, Mannschaft, Datum, Startzeit, Ort, Schwerpunkt und Notizen.
 - **Übungsbibliothek**: 60+ eingebaute Übungen für Indoor-6er-Volleyball (Aufwärmen bis
   Cool-down) mit Volltextsuche und Filtern nach Kategorie und Niveau.
@@ -27,9 +30,20 @@ gestaltetes PDF exportieren. Mit Login und zentraler Speicherung auf dem eigenen
 
 ```bash
 npm install
+npm run invite   # erzeugt einen Einladungscode für die erste Registrierung
 npm start
 # → http://localhost:3000
 ```
+
+Einladungscodes verwalten:
+
+```bash
+npm run invite          # einen neuen Code erzeugen
+npm run invite -- 5     # fünf Codes auf einmal
+npm run invite -- list  # alle Codes und ihren Status anzeigen
+```
+
+Jeder Code ist einmal verwendbar.
 
 Daten (SQLite-Datenbank + Cookie-Signaturschlüssel) landen im Ordner `data/`
 (konfigurierbar über die Umgebungsvariable `DATA_DIR`, Port über `PORT`).

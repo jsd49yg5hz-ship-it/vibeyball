@@ -197,6 +197,15 @@ Aufruf dann über `https://deine-domain.ch/training/` (mit Schrägstrich am Ende
 - **Daten:** Alles liegt in `DATA_DIR` (Standard: `./data`) – eine SQLite-Datei und der
   Schlüssel `secret.key`, mit dem die Login-Cookies signiert werden. Diesen Ordner sichern!
 - **HTTPS ist Pflicht,** sobald echte Benutzer Passwörter eingeben.
-- **Registrierung ist offen:** Jeder, der die URL kennt, kann ein Konto anlegen. Für den
-  Anfang meist okay – wenn du das einschränken willst (z. B. Einladungscode), ist das eine
-  kleine Erweiterung in `server.js` (`/api/register`).
+- **Registrierung nur mit Einladungscode:** Neue Konten brauchen einen einmalig
+  verwendbaren Code. Auf dem Server erzeugen (Umgebungsvariable `DATA_DIR` muss auf
+  denselben Datenordner zeigen wie beim Dienst):
+
+  ```bash
+  cd /opt/vibeyball/app
+  sudo -u vibeyball DATA_DIR=/opt/vibeyball/data npm run invite          # 1 Code
+  sudo -u vibeyball DATA_DIR=/opt/vibeyball/data npm run invite -- 5     # 5 Codes
+  sudo -u vibeyball DATA_DIR=/opt/vibeyball/data npm run invite -- list  # Status ansehen
+  ```
+
+  Den ersten Code brauchst du für deine eigene Registrierung direkt nach dem Deployment.

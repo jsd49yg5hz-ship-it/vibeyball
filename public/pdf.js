@@ -2,13 +2,14 @@
 
 (function () {
   const COLORS = {
-    primary: [29, 78, 216],   // Blau
-    primaryDark: [30, 64, 175],
-    text: [15, 23, 42],
-    muted: [100, 116, 139],
-    light: [241, 245, 249],
-    zebra: [248, 250, 252],
-    line: [203, 213, 225],
+    primary: [22, 32, 60],    // dunkles Navy (Theme «Volleyball-warm»)
+    primaryDark: [234, 88, 12], // Orange-Akzentlinie unter dem Kopfband
+    accent: [234, 88, 12],    // Orange für Zeiten
+    text: [30, 36, 51],
+    muted: [121, 113, 95],
+    light: [246, 241, 231],   // Sand für Boxen
+    zebra: [250, 246, 238],
+    line: [231, 221, 204],
   };
 
   const PAGE = { w: 210, h: 297, margin: 16 };
@@ -62,7 +63,7 @@
       doc.text(session.titel || "Trainingssession", PAGE.margin, 14);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9.5);
-      doc.setTextColor(219, 234, 254);
+      doc.setTextColor(247, 213, 181);
       doc.text("Trainingsplan · VibeyBall", PAGE.margin, 21);
 
       // Gesamtdauer rechts im Kopf
@@ -72,7 +73,7 @@
       doc.text(total + " min", PAGE.w - PAGE.margin, 14, { align: "right" });
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
-      doc.setTextColor(219, 234, 254);
+      doc.setTextColor(247, 213, 181);
       doc.text("Gesamtdauer", PAGE.w - PAGE.margin, 20, { align: "right" });
 
       y = 38;
@@ -170,7 +171,7 @@
       if (hasTime) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8.5);
-        doc.setTextColor(...COLORS.primary);
+        doc.setTextColor(...COLORS.accent);
         doc.text(clock + "–" + addMinutes(clock, dauer), x, baseline);
         x += col.time;
       }

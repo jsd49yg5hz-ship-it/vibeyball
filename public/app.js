@@ -119,6 +119,7 @@ function setAuthMode(mode) {
   $("#tab-login").classList.toggle("active", mode === "login");
   $("#tab-register").classList.toggle("active", mode === "register");
   $("#auth-name-label").classList.toggle("hidden", mode === "login");
+  $("#auth-invite-label").classList.toggle("hidden", mode === "login");
   $("#auth-submit").textContent = mode === "login" ? "Anmelden" : "Konto erstellen";
   $("#auth-password").autocomplete = mode === "login" ? "current-password" : "new-password";
   $("#auth-error").classList.add("hidden");
@@ -130,6 +131,7 @@ async function handleAuthSubmit(e) {
     name: $("#auth-name").value.trim(),
     email: $("#auth-email").value.trim(),
     password: $("#auth-password").value,
+    invite: $("#auth-invite").value.trim(),
   };
   try {
     user = await api("POST", authMode === "login" ? "api/login" : "api/register", body);
@@ -583,8 +585,28 @@ async function openShareDialog() {
 
 // ═══════════ Initialisierung ═══════════
 
+// ═══════════ Theme (hell/dunkel) ═══════════
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  $("#btn-theme").textContent = theme === "dark" ? "☀️" : "🌙";
+}
+
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  localStorage.setItem("vb-theme", next);
+  applyTheme(next);
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   bindEditorForm();
+
+  // Theme
+  applyTheme(document.documentElement.dataset.theme);
+  $("#btn-theme").addEventListener("click", toggleTheme);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+    if (!localStorage.getItem("vb-theme")) applyTheme(e.matches ? "dark" : "light");
+  });
 
   // Auth
   $("#tab-login").addEventListener("click", () => setAuthMode("login"));

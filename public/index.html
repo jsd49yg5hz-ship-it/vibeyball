@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VibeyBall – Volleyball-Trainingsplaner</title>
+  <script>
+    // Theme vor dem Rendern setzen (gespeicherte Wahl oder Systemeinstellung)
+    document.documentElement.dataset.theme = localStorage.getItem("vb-theme") ||
+      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  </script>
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏐</text></svg>">
 </head>
@@ -11,9 +16,12 @@
 
   <header class="app-header">
     <h1>🏐 VibeyBall <span class="subtitle">Trainingsplaner für Volleyball-Coaches</span></h1>
-    <div id="user-box" class="user-box hidden">
-      <span id="user-name"></span>
-      <button class="btn btn-header" id="btn-logout">Abmelden</button>
+    <div class="header-right">
+      <button class="btn btn-header btn-theme" id="btn-theme" title="Hell/Dunkel umschalten">🌙</button>
+      <div id="user-box" class="user-box hidden">
+        <span id="user-name"></span>
+        <button class="btn btn-header" id="btn-logout">Abmelden</button>
+      </div>
     </div>
   </header>
 
@@ -33,6 +41,9 @@
         </label>
         <label>Passwort
           <input type="password" id="auth-password" autocomplete="current-password" required minlength="8" placeholder="mind. 8 Zeichen">
+        </label>
+        <label id="auth-invite-label" class="hidden">Einladungscode
+          <input type="text" id="auth-invite" placeholder="VB-XXXX-XXXX" autocomplete="off">
         </label>
         <p id="auth-error" class="auth-error hidden"></p>
         <button type="submit" class="btn btn-primary btn-block" id="auth-submit">Anmelden</button>
