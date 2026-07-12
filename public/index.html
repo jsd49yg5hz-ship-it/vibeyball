@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeyBall – Volleyball-Trainingsplaner</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏐</text></svg>">
+</head>
+<body>
+
+  <header class="app-header">
+    <h1>🏐 VibeyBall <span class="subtitle">Trainingsplaner für Volleyball-Coaches</span></h1>
+    <div id="user-box" class="user-box hidden">
+      <span id="user-name"></span>
+      <button class="btn btn-header" id="btn-logout">Abmelden</button>
+    </div>
+  </header>
+
+  <!-- ═══════════ Ansicht: Login / Registrierung ═══════════ -->
+  <main id="view-auth" class="view view-auth hidden">
+    <div class="auth-card">
+      <div class="auth-tabs">
+        <button id="tab-login" class="auth-tab active">Anmelden</button>
+        <button id="tab-register" class="auth-tab">Registrieren</button>
+      </div>
+      <form id="auth-form">
+        <label id="auth-name-label" class="hidden">Name
+          <input type="text" id="auth-name" autocomplete="name" placeholder="Vor- und Nachname">
+        </label>
+        <label>E-Mail
+          <input type="email" id="auth-email" autocomplete="email" required placeholder="coach@verein.ch">
+        </label>
+        <label>Passwort
+          <input type="password" id="auth-password" autocomplete="current-password" required minlength="8" placeholder="mind. 8 Zeichen">
+        </label>
+        <p id="auth-error" class="auth-error hidden"></p>
+        <button type="submit" class="btn btn-primary btn-block" id="auth-submit">Anmelden</button>
+      </form>
+    </div>
+  </main>
+
+  <!-- ═══════════ Ansicht: Session-Übersicht ═══════════ -->
+  <main id="view-list" class="view hidden">
+    <div class="toolbar">
+      <h2>Meine Trainingssessions</h2>
+      <div class="toolbar-actions">
+        <button class="btn" id="btn-toggle-calendar">📆 Kalender</button>
+        <button class="btn" id="btn-ical" title="Alle Trainings als Kalenderdatei (.ics) exportieren">⬇ iCal-Export</button>
+        <button class="btn btn-primary" id="btn-new-session">+ Neue Session</button>
+      </div>
+    </div>
+    <div id="session-list" class="session-list"></div>
+    <div id="calendar" class="calendar hidden"></div>
+    <p id="empty-hint" class="empty-hint hidden">
+      Noch keine Sessions vorhanden. Erstelle deine erste Trainingssession!
+    </p>
+  </main>
+
+  <!-- ═══════════ Ansicht: Session-Editor ═══════════ -->
+  <main id="view-editor" class="view hidden">
+    <div class="toolbar">
+      <button class="btn" id="btn-back">← Zur Übersicht</button>
+      <div class="toolbar-actions">
+        <button class="btn" id="btn-duplicate" title="Kopie dieser Session anlegen">📋 Duplizieren</button>
+        <button class="btn" id="btn-series" title="Session wöchentlich wiederholen">🔁 Serie</button>
+        <button class="btn" id="btn-share" title="Read-only-Link zum Teilen erzeugen">🔗 Teilen</button>
+        <button class="btn btn-primary" id="btn-pdf">📄 PDF erstellen</button>
+      </div>
+    </div>
+
+    <div class="editor-grid">
+      <!-- Linke Spalte: Session-Daten & Ablauf -->
+      <section class="panel">
+        <h3>Session-Details</h3>
+        <div class="form-grid">
+          <label>Titel
+            <input type="text" id="f-title" placeholder="z. B. Annahme &amp; Sideout">
+          </label>
+          <label>Mannschaft
+            <input type="text" id="f-team" placeholder="z. B. Damen 1">
+          </label>
+          <label>Datum
+            <input type="date" id="f-date">
+          </label>
+          <label>Startzeit
+            <input type="time" id="f-time">
+          </label>
+          <label>Ort / Halle
+            <input type="text" id="f-location" placeholder="z. B. Sporthalle ETH">
+          </label>
+          <label>Trainingsschwerpunkt
+            <input type="text" id="f-focus" placeholder="z. B. Annahme unter Druck">
+          </label>
+          <label class="span-2">Notizen
+            <textarea id="f-notes" rows="2" placeholder="Material, Abwesenheiten, Hinweise …"></textarea>
+          </label>
+        </div>
+
+        <div class="plan-header">
+          <h3>Trainingsablauf</h3>
+          <span id="total-duration" class="badge">0 min</span>
+        </div>
+        <ol id="plan-list" class="plan-list"></ol>
+        <p id="plan-empty" class="empty-hint">
+          Füge rechts Übungen aus der Bibliothek hinzu.
+        </p>
+      </section>
+
+      <!-- Rechte Spalte: Übungsbibliothek -->
+      <section class="panel">
+        <div class="plan-header">
+          <h3>Übungsbibliothek</h3>
+          <button class="btn" id="btn-new-exercise">+ Eigene Übung</button>
+        </div>
+        <div class="library-filters">
+          <input type="search" id="f-search" placeholder="Übung suchen …">
+          <select id="f-category">
+            <option value="">Alle Kategorien</option>
+          </select>
+          <select id="f-level">
+            <option value="">Alle Niveaus</option>
+            <option value="Anfänger">Anfänger</option>
+            <option value="Fortgeschritten">Fortgeschritten</option>
+            <option value="Alle">Für alle Niveaus</option>
+          </select>
+        </div>
+        <div id="exercise-list" class="exercise-list"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ═══════════ Dialog: Eigene Übung ═══════════ -->
+  <dialog id="dlg-exercise">
+    <form id="exercise-form" method="dialog">
+      <h3 id="dlg-exercise-title">Eigene Übung erstellen</h3>
+      <label>Name *
+        <input type="text" id="ex-name" required placeholder="z. B. Blockschatten-Drill">
+      </label>
+      <div class="dlg-row">
+        <label>Kategorie
+          <input type="text" id="ex-category" list="category-options" placeholder="z. B. Block">
+          <datalist id="category-options"></datalist>
+        </label>
+        <label>Niveau
+          <select id="ex-level">
+            <option value="Alle">Alle</option>
+            <option value="Anfänger">Anfänger</option>
+            <option value="Fortgeschritten">Fortgeschritten</option>
+          </select>
+        </label>
+      </div>
+      <div class="dlg-row">
+        <label>Min. Spieler
+          <input type="number" id="ex-players" min="1" max="24" value="2">
+        </label>
+        <label>Dauer (min)
+          <input type="number" id="ex-duration" min="1" max="180" value="10">
+        </label>
+      </div>
+      <label>Beschreibung
+        <textarea id="ex-desc" rows="4" placeholder="Aufbau, Ablauf, Coaching-Punkte …"></textarea>
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn" id="btn-ex-cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Serie ═══════════ -->
+  <dialog id="dlg-series">
+    <form id="series-form" method="dialog">
+      <h3>Session als Serie wiederholen</h3>
+      <p class="dlg-hint">Erstellt Kopien dieser Session im Wochenabstand (gleicher Wochentag, gleiche Zeit).</p>
+      <label>Anzahl Wiederholungen
+        <input type="number" id="series-count" min="1" max="52" value="4">
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn" id="btn-series-cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Serie erstellen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Teilen ═══════════ -->
+  <dialog id="dlg-share">
+    <h3>Trainingsplan teilen</h3>
+    <p class="dlg-hint">Wer diesen Link hat, kann den Plan ansehen (nur lesen) und als PDF speichern.</p>
+    <div class="share-row">
+      <input type="text" id="share-url" readonly>
+      <button class="btn btn-primary" id="btn-copy-share">Kopieren</button>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn" id="btn-unshare">Teilen beenden</button>
+      <button class="btn" id="btn-share-close">Schliessen</button>
+    </div>
+  </dialog>
+
+  <script src="vendor/jspdf.umd.min.js"></script>
+  <script src="exercises.js"></script>
+  <script src="pdf.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
