@@ -1,18 +1,18 @@
-/* VibeyBall – PDF-Generierung mit jsPDF (A4, eigenes Layout) */
+/* VibeyBall – PDF-Generierung mit jsPDF (A4, eigenes Layout)
+ * Druckfreundlich: keine gefüllten Flächen, nur Typografie, feine Linien
+ * und dezente Farbschrift (Navy/Orange). */
 
 (function () {
   const COLORS = {
-    primary: [22, 32, 60],    // dunkles Navy (Theme «Volleyball-warm»)
-    primaryDark: [234, 88, 12], // Orange-Akzentlinie unter dem Kopfband
-    accent: [234, 88, 12],    // Orange für Zeiten
+    navy: [22, 32, 60],
+    accent: [200, 74, 8],   // gedecktes Orange, gut lesbar auf Weiss
     text: [30, 36, 51],
-    muted: [121, 113, 95],
-    light: [246, 241, 231],   // Sand für Boxen
-    zebra: [250, 246, 238],
-    line: [231, 221, 204],
+    muted: [122, 115, 100],
+    line: [200, 192, 178],
+    hairline: [222, 216, 204],
   };
 
-  const PAGE = { w: 210, h: 297, margin: 16 };
+  const PAGE = { w: 210, h: 297, margin: 18 };
   const CONTENT_W = PAGE.w - 2 * PAGE.margin;
 
   function fmtDate(iso) {
@@ -32,12 +32,7 @@
   function columns(hasTime) {
     const time = hasTime ? 24 : 0;
     const cat = 27, dur = 15;
-    return {
-      time,
-      name: CONTENT_W - time - cat - dur,
-      cat,
-      dur,
-    };
+    return { time, name: CONTENT_W - time - cat - dur, cat, dur };
   }
 
   window.generateSessionPdf = function (session, exerciseLookup) {
@@ -50,79 +45,81 @@
     let pageNo = 1;
     let y;
 
-    // ── Kopfbereich Seite 1 ──
+    // ── Kopfbereich Seite 1: nur Schrift + orange Linie ──
     function drawHeader() {
-      doc.setFillColor(...COLORS.primary);
-      doc.rect(0, 0, PAGE.w, 30, "F");
-      doc.setFillColor(...COLORS.primaryDark);
-      doc.rect(0, 27, PAGE.w, 3, "F");
-
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(...COLORS.navy);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(17);
-      doc.text(session.titel || "Trainingssession", PAGE.margin, 14);
+      doc.setFontSize(19);
+      doc.text(session.titel || "Trainingssession", PAGE.margin, 24);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9.5);
-      doc.setTextColor(247, 213, 181);
-      doc.text("Trainingsplan · VibeyBall", PAGE.margin, 21);
+      doc.setTextColor(...COLORS.muted);
+      doc.text("Trainingsplan · VibeyBall", PAGE.margin, 30);
 
-      // Gesamtdauer rechts im Kopf
+      // Gesamtdauer rechts
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(255, 255, 255);
-      doc.text(total + " min", PAGE.w - PAGE.margin, 14, { align: "right" });
+      doc.setFontSize(14);
+      doc.setTextColor(...COLORS.accent);
+      doc.text(total + " min", PAGE.w - PAGE.margin, 24, { align: "right" });
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
-      doc.setTextColor(247, 213, 181);
-      doc.text("Gesamtdauer", PAGE.w - PAGE.margin, 20, { align: "right" });
+      doc.setTextColor(...COLORS.muted);
+      doc.text("Gesamtdauer", PAGE.w - PAGE.margin, 29.5, { align: "right" });
 
-      y = 38;
+      doc.setDrawColor(...COLORS.accent);
+      doc.setLineWidth(0.9);
+      doc.line(PAGE.margin, 34.5, PAGE.w - PAGE.margin, 34.5);
+
+      y = 43;
     }
 
-    // ── Meta-Box mit Sessiondaten ──
+    // ── Sessiondaten: zwei Spalten, nur Schrift, feine Linie darunter ──
     function drawMeta() {
+      const fokus = (session.tags && session.tags.length) ? session.tags.join(", ") : (session.schwerpunkt || "–");
       const rows = [
         ["Mannschaft", session.team || "–", "Datum", fmtDate(session.datum) + (session.uhrzeit ? ", " + session.uhrzeit + " Uhr" : "")],
-        ["Ort / Halle", session.ort || "–", "Schwerpunkt", session.schwerpunkt || "–"],
+        ["Ort / Halle", session.ort || "–", "Fokus", fokus],
       ];
-      const boxH = 8 + rows.length * 7;
-      doc.setFillColor(...COLORS.light);
-      doc.roundedRect(PAGE.margin, y, CONTENT_W, boxH, 2, 2, "F");
 
-      let ry = y + 9;
       const colW = CONTENT_W / 2;
       for (const [l1, v1, l2, v2] of rows) {
-        doc.setFontSize(9);
+        doc.setFontSize(8.5);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(...COLORS.muted);
-        doc.text(l1.toUpperCase(), PAGE.margin + 5, ry);
-        doc.text(l2.toUpperCase(), PAGE.margin + colW + 3, ry);
+        doc.text(l1.toUpperCase(), PAGE.margin, y);
+        doc.text(l2.toUpperCase(), PAGE.margin + colW + 3, y);
+        doc.setFontSize(9.5);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(...COLORS.text);
-        doc.text(String(v1), PAGE.margin + 32, ry, { maxWidth: colW - 38 });
-        doc.text(String(v2), PAGE.margin + colW + 30, ry, { maxWidth: colW - 36 });
-        ry += 7;
+        doc.text(String(v1), PAGE.margin + 28, y, { maxWidth: colW - 34 });
+        doc.text(String(v2), PAGE.margin + colW + 22, y, { maxWidth: colW - 28 });
+        y += 6.5;
       }
-      y += boxH + 8;
+
+      doc.setDrawColor(...COLORS.hairline);
+      doc.setLineWidth(0.2);
+      doc.line(PAGE.margin, y, PAGE.w - PAGE.margin, y);
+      y += 9;
     }
 
-    // ── Tabellenkopf ──
+    // ── Tabellenkopf: Schrift + kräftigere Linie, keine Füllung ──
     function drawTableHead() {
-      doc.setFillColor(...COLORS.primary);
-      doc.rect(PAGE.margin, y, CONTENT_W, 8, "F");
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(...COLORS.navy);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.5);
-      let x = PAGE.margin + 3;
-      if (hasTime) { doc.text("ZEIT", x, y + 5.4); x += col.time; }
-      doc.text("ÜBUNG", x, y + 5.4); x += col.name;
-      doc.text("KATEGORIE", x, y + 5.4); x += col.cat;
-      doc.text("DAUER", x, y + 5.4);
-      y += 8;
+      let x = PAGE.margin;
+      if (hasTime) { doc.text("ZEIT", x, y + 4); x += col.time; }
+      doc.text("ÜBUNG", x, y + 4); x += col.name;
+      doc.text("KATEGORIE", x, y + 4); x += col.cat;
+      doc.text("DAUER", x, y + 4);
+      doc.setDrawColor(...COLORS.line);
+      doc.setLineWidth(0.5);
+      doc.line(PAGE.margin, y + 6.5, PAGE.w - PAGE.margin, y + 6.5);
+      y += 10;
     }
 
     function drawFooter() {
-      doc.setDrawColor(...COLORS.line);
+      doc.setDrawColor(...COLORS.hairline);
       doc.setLineWidth(0.2);
       doc.line(PAGE.margin, PAGE.h - 12, PAGE.w - PAGE.margin, PAGE.h - 12);
       doc.setFont("helvetica", "normal");
@@ -148,7 +145,7 @@
     let clock = session.uhrzeit || null;
     const nameW = col.name - 6;
 
-    session.items.forEach((item, i) => {
+    session.items.forEach((item) => {
       const ex = exerciseLookup(item);
       const dauer = Number(item.dauer) || 0;
 
@@ -159,14 +156,8 @@
 
       if (y + rowH > PAGE.h - 18) newPage();
 
-      // Zebra-Hintergrund
-      if (i % 2 === 1) {
-        doc.setFillColor(...COLORS.zebra);
-        doc.rect(PAGE.margin, y, CONTENT_W, rowH, "F");
-      }
-
-      let x = PAGE.margin + 3;
-      const baseline = y + 5.5;
+      let x = PAGE.margin;
+      const baseline = y + 4;
 
       if (hasTime) {
         doc.setFont("helvetica", "bold");
@@ -200,13 +191,13 @@
       x += col.cat;
 
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(...COLORS.text);
+      doc.setTextColor(...COLORS.navy);
       doc.text(dauer + "'", x, baseline);
 
-      // Trennlinie
-      doc.setDrawColor(...COLORS.line);
-      doc.setLineWidth(0.15);
-      doc.line(PAGE.margin, y + rowH, PAGE.w - PAGE.margin, y + rowH);
+      // feine Trennlinie zwischen den Übungen
+      doc.setDrawColor(...COLORS.hairline);
+      doc.setLineWidth(0.2);
+      doc.line(PAGE.margin, y + rowH - 2, PAGE.w - PAGE.margin, y + rowH - 2);
 
       y += rowH;
       if (clock) clock = addMinutes(clock, dauer);
@@ -216,27 +207,25 @@
       doc.setFont("helvetica", "italic");
       doc.setFontSize(9);
       doc.setTextColor(...COLORS.muted);
-      doc.text("Keine Übungen geplant.", PAGE.margin + 3, y + 6);
+      doc.text("Keine Übungen geplant.", PAGE.margin, y + 6);
       y += 10;
     }
 
-    // ── Notizen ──
+    // ── Notizen: Label + Text, keine Box ──
     if (session.notizen) {
-      const noteLines = doc.splitTextToSize(session.notizen, CONTENT_W - 10);
-      const boxH = 10 + noteLines.length * 4;
-      if (y + boxH > PAGE.h - 18) newPage();
-      y += 5;
-      doc.setFillColor(...COLORS.light);
-      doc.roundedRect(PAGE.margin, y, CONTENT_W, boxH, 2, 2, "F");
+      const noteLines = doc.splitTextToSize(session.notizen, CONTENT_W);
+      const blockH = 12 + noteLines.length * 4;
+      if (y + blockH > PAGE.h - 18) newPage();
+      y += 6;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.5);
-      doc.setTextColor(...COLORS.muted);
-      doc.text("NOTIZEN", PAGE.margin + 5, y + 6);
+      doc.setTextColor(...COLORS.navy);
+      doc.text("NOTIZEN", PAGE.margin, y);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
       doc.setTextColor(...COLORS.text);
-      doc.text(noteLines, PAGE.margin + 5, y + 11.5);
-      y += boxH;
+      doc.text(noteLines, PAGE.margin, y + 5);
+      y += blockH;
     }
 
     drawFooter();

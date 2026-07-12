@@ -314,27 +314,76 @@ dialog label {
 .share-row { display: flex; gap: 8px; }
 .share-row input { flex: 1; font-size: .85rem; color: var(--muted); }
 
-/* ═══════════ Kalender ═══════════ */
-.calendar { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
-.cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.cal-header h3 { font-weight: 800; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.cal-weekdays { margin-bottom: 4px; font-size: .75rem; font-weight: 700; color: var(--muted); text-align: center; }
-.cal-cell {
-  min-height: 76px; border: 1px solid var(--border); border-radius: 8px;
-  padding: 4px; background: var(--panel-soft); display: flex; flex-direction: column; gap: 3px;
+/* ═══════════ Reiter (Trainings | Statistik) ═══════════ */
+.tabs {
+  display: flex; gap: 4px; background: var(--panel-soft);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px;
 }
-.cal-empty { border: none; background: none; }
-.cal-today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.cal-day { font-size: .75rem; font-weight: 700; color: var(--muted); }
-.cal-today .cal-day { color: var(--accent-text); }
-.cal-chip {
-  border: none; background: var(--accent-grad); color: #fff; border-radius: 6px;
-  font-size: .68rem; font-weight: 600; padding: 3px 6px; cursor: pointer; text-align: left;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  transition: filter .12s;
+.tab {
+  border: none; background: none; padding: 8px 20px; border-radius: 8px;
+  font: inherit; font-weight: 700; color: var(--muted); cursor: pointer;
 }
-.cal-chip:hover { filter: brightness(1.1); }
+.tab.active { background: var(--panel); color: var(--accent-text); box-shadow: var(--shadow); }
+
+/* ═══════════ Fokus-Tags & Ausgeführt ═══════════ */
+.field-label { font-size: .8rem; font-weight: 600; color: var(--muted); display: block; margin-bottom: 4px; }
+.tag-select { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 999px; padding: 5px 13px;
+  font-size: .85rem; cursor: pointer; user-select: none; background: var(--panel);
+  color: var(--text); font-weight: 500;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.tag-chip:hover { border-color: var(--accent); }
+.tag-chip input { display: none; }
+.tag-chip:has(input:checked) {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent-text); font-weight: 700;
+}
+
+.check-row {
+  flex-direction: row !important; align-items: center; gap: 8px;
+  align-self: end; padding-bottom: 8px; cursor: pointer;
+}
+.check-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: #16a34a; cursor: pointer; }
+.check-row span { font-size: .88rem; color: var(--text); font-weight: 500; }
+
+.badge.done { background: rgba(22, 163, 74, .14); color: #16a34a; margin-left: 6px; }
+:root[data-theme="dark"] .badge.done { color: #4ade80; background: rgba(74, 222, 128, .14); }
+.done-toggle {
+  border: 1px solid var(--border); border-radius: 999px;
+  width: 26px; height: 26px; line-height: 1; font-weight: 700;
+}
+.done-toggle.is-done { background: #16a34a; border-color: #16a34a; color: #fff; }
+.done-toggle.is-done:hover { background: #15803d; color: #fff; }
+.session-card.is-done { border-left-color: #16a34a; }
+
+/* ═══════════ Statistik (Spider Chart) ═══════════ */
+.stats-sub { color: var(--muted); font-size: .85rem; margin: -6px 0 14px; }
+.stats-grid {
+  display: grid; grid-template-columns: minmax(280px, 440px) auto;
+  gap: 28px; align-items: center; justify-content: start;
+}
+@media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr; } }
+.radar { width: 100%; max-width: 440px; height: auto; display: block; }
+.radar-ring { fill: none; stroke: var(--border); stroke-width: 1; }
+.radar-axis { stroke: var(--border); stroke-width: 1; }
+.radar-ringlabel { fill: var(--muted); font-size: 9px; }
+.radar-label { fill: var(--text); font-size: 13px; font-weight: 600; }
+.radar-area {
+  fill: var(--accent); fill-opacity: .22;
+  stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round;
+}
+.radar-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.stats-list { list-style: none; display: flex; flex-direction: column; gap: 10px; min-width: 190px; }
+.stats-list li {
+  display: flex; align-items: center; gap: 10px;
+  font-size: .92rem; border-bottom: 1px solid var(--border); padding-bottom: 8px;
+}
+.stats-list .stats-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.stats-list .stats-label { flex: 1; color: var(--muted); }
+.stats-list strong { font-weight: 800; }
 
 /* ═══════════ Geteilte Ansicht ═══════════ */
 .share-meta { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }

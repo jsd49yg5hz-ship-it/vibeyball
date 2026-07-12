@@ -51,18 +51,19 @@
     </div>
   </main>
 
-  <!-- ═══════════ Ansicht: Session-Übersicht ═══════════ -->
+  <!-- ═══════════ Ansicht: Übersicht (Trainings | Statistik) ═══════════ -->
   <main id="view-list" class="view hidden">
     <div class="toolbar">
-      <h2>Meine Trainingssessions</h2>
+      <div class="tabs">
+        <button class="tab active" id="tab-sessions">Trainings</button>
+        <button class="tab" id="tab-stats">Statistik</button>
+      </div>
       <div class="toolbar-actions">
-        <button class="btn" id="btn-toggle-calendar">📆 Kalender</button>
-        <button class="btn" id="btn-ical" title="Alle Trainings als Kalenderdatei (.ics) exportieren">⬇ iCal-Export</button>
         <button class="btn btn-primary" id="btn-new-session">+ Neue Session</button>
       </div>
     </div>
     <div id="session-list" class="session-list"></div>
-    <div id="calendar" class="calendar hidden"></div>
+    <div id="stats-panel" class="hidden"></div>
     <p id="empty-hint" class="empty-hint hidden">
       Noch keine Sessions vorhanden. Erstelle deine erste Trainingssession!
     </p>
@@ -100,9 +101,14 @@
           <label>Ort / Halle
             <input type="text" id="f-location" placeholder="z. B. Sporthalle ETH">
           </label>
-          <label>Trainingsschwerpunkt
-            <input type="text" id="f-focus" placeholder="z. B. Annahme unter Druck">
+          <label class="check-row">
+            <input type="checkbox" id="f-done">
+            <span>Training ausgeführt</span>
           </label>
+          <div class="span-2">
+            <span class="field-label">Fokus</span>
+            <div class="tag-select" id="f-tags"></div>
+          </div>
           <label class="span-2">Notizen
             <textarea id="f-notes" rows="2" placeholder="Material, Abwesenheiten, Hinweise …"></textarea>
           </label>

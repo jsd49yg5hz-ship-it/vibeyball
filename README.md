@@ -11,18 +11,21 @@ gestaltetes PDF exportieren. Mit Login und zentraler Speicherung auf dem eigenen
   **Einladungscodes** geschützt (`npm run invite`).
 - **Dark Mode & warmes Theme**: folgt automatisch der Systemeinstellung, mit manuellem
   Hell/Dunkel-Umschalter im Header; Sand-/Orangetöne auf dunklem Blau.
-- **Trainingssessions** mit Titel, Mannschaft, Datum, Startzeit, Ort, Schwerpunkt und Notizen.
+- **Trainingssessions** mit Titel, Mannschaft, Datum, Startzeit, Ort, Fokus-Tags und Notizen;
+  Trainings lassen sich als **ausgeführt** markieren (per ✓ in der Übersicht oder im Editor).
+- **Fokus-Tags**: pro Session mehrere Schwerpunkte wählbar (Annahme, Block, Verteidigung,
+  Zuspiel, Angriff, Taktik).
+- **Statistik-Reiter**: Spider Chart zeigt, welcher Fokus wie oft trainiert wurde
+  (gezählt werden ausgeführte Trainings).
 - **Übungsbibliothek**: 60+ eingebaute Übungen für Indoor-6er-Volleyball (Aufwärmen bis
   Cool-down) mit Volltextsuche und Filtern nach Kategorie und Niveau.
 - **Eigene Übungen**: erstellen, bearbeiten, löschen – inklusive eigener Kategorien.
 - **Trainingsablauf**: Übungen hinzufügen, Dauer anpassen, Reihenfolge ändern, Notizen pro
   Übung; bei gesetzter Startzeit werden konkrete Uhrzeiten pro Übung berechnet
   (z. B. 18:30–18:40) und die Gesamtdauer automatisch summiert.
-- **PDF-Export**: direkt generiertes, gestaltetes A4-PDF (jsPDF) mit Kopfbereich,
-  Sessiondaten, Zeitspalte und mehrseitigem Umbruch.
+- **PDF-Export**: direkt generiertes, druckfreundliches A4-PDF (jsPDF) – keine Farbflächen,
+  klare Typografie mit dezenten Farbakzenten, Zeitspalte, mehrseitiger Umbruch.
 - **Duplizieren & Serien**: Session kopieren oder als wöchentliche Serie wiederholen.
-- **Kalender & iCal**: Monatskalender-Ansicht der Trainings und Export aller Sessions
-  als `.ics`-Datei für Google/Apple/Outlook-Kalender.
 - **Teilen**: Read-only-Link pro Session für Co-Trainer oder das Team (inkl. PDF-Download),
   jederzeit widerrufbar.
 

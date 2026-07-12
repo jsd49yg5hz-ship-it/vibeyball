@@ -88,7 +88,7 @@
         s.team && `<strong>Mannschaft:</strong> ${esc(s.team)}`,
         s.datum && `<strong>Datum:</strong> ${formatDate(s.datum)}${s.uhrzeit ? ", " + esc(s.uhrzeit) + " Uhr" : ""}`,
         s.ort && `<strong>Ort:</strong> ${esc(s.ort)}`,
-        s.schwerpunkt && `<strong>Schwerpunkt:</strong> ${esc(s.schwerpunkt)}`,
+        (s.tags || []).length && `<strong>Fokus:</strong> ${s.tags.map(esc).join(", ")}`,
       ].filter(Boolean).join(" · ");
 
       let clock = s.uhrzeit || null;

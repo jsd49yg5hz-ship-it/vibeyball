@@ -1,13 +1,14 @@
 /* VibeyBall – Trainingsplaner für Volleyball-Coaches
  * Frontend: Auth + zentrale Speicherung über die REST-API des Servers. */
 
+const FOCUS_TAGS = ["Annahme", "Block", "Verteidigung", "Zuspiel", "Angriff", "Taktik"];
+
 let user = null;
 let sessions = [];
 let customExercises = [];
 let currentId = null;      // ID der Session im Editor
 let editingExerciseId = null; // ID der eigenen Übung im Bearbeiten-Dialog
-let calendarMode = false;
-let calendarMonth = null;  // Date (1. des angezeigten Monats)
+let listTab = "sessions";  // aktiver Reiter der Übersicht: "sessions" | "stats"
 
 // ═══════════ API ═══════════
 
@@ -98,7 +99,7 @@ function showAuthView() {
 function showListView() {
   currentId = null;
   switchView("view-list");
-  renderListOrCalendar();
+  renderListView();
 }
 
 function showEditorView(id) {
@@ -162,14 +163,15 @@ async function logout() {
   showAuthView();
 }
 
-// ═══════════ Session-Übersicht (Liste + Kalender) ═══════════
+// ═══════════ Übersicht (Reiter: Trainings | Statistik) ═══════════
 
-function renderListOrCalendar() {
-  $("#btn-toggle-calendar").textContent = calendarMode ? "📋 Liste" : "📆 Kalender";
-  $("#session-list").classList.toggle("hidden", calendarMode);
-  $("#calendar").classList.toggle("hidden", !calendarMode);
-  $("#empty-hint").classList.toggle("hidden", sessions.length > 0 || calendarMode);
-  if (calendarMode) renderCalendar(); else renderSessionList();
+function renderListView() {
+  $("#tab-sessions").classList.toggle("active", listTab === "sessions");
+  $("#tab-stats").classList.toggle("active", listTab === "stats");
+  $("#session-list").classList.toggle("hidden", listTab !== "sessions");
+  $("#stats-panel").classList.toggle("hidden", listTab !== "stats");
+  $("#empty-hint").classList.toggle("hidden", listTab !== "sessions" || sessions.length > 0);
+  if (listTab === "sessions") renderSessionList(); else renderStats();
 }
 
 function renderSessionList() {
@@ -179,7 +181,8 @@ function renderSessionList() {
   const sorted = [...sessions].sort((a, b) => (b.datum || "").localeCompare(a.datum || ""));
   for (const s of sorted) {
     const card = document.createElement("div");
-    card.className = "session-card";
+    card.className = "session-card" + (s.ausgefuehrt ? " is-done" : "");
+    const tags = s.tags || [];
     card.innerHTML = `
       <h3>${esc(s.titel) || "Ohne Titel"}</h3>
       <div class="meta">
@@ -187,73 +190,122 @@ function renderSessionList() {
         ${s.datum ? " · " + formatDate(s.datum) : ""}${s.uhrzeit ? ", " + esc(s.uhrzeit) : ""}
         ${s.ort ? " · " + esc(s.ort) : ""}
       </div>
+      ${tags.length ? `<div class="ex-tags">${tags.map((t) => `<span class="tag cat">${esc(t)}</span>`).join("")}</div>` : ""}
       <div class="card-footer">
-        <span class="badge">${s.items.length} Übungen · ${totalDuration(s)} min</span>
         <span>
+          <span class="badge">${s.items.length} Übungen · ${totalDuration(s)} min</span>
+          ${s.ausgefuehrt ? `<span class="badge done">✓ Ausgeführt</span>` : ""}
+        </span>
+        <span>
+          <button class="btn-icon done-toggle ${s.ausgefuehrt ? "is-done" : ""}" data-act="done"
+            title="${s.ausgefuehrt ? "Als nicht ausgeführt markieren" : "Als ausgeführt markieren"}">✓</button>
           <button class="btn-icon" data-act="dup" title="Duplizieren">📋</button>
           <button class="btn-icon danger" data-act="del" title="Session löschen">🗑️</button>
         </span>
       </div>`;
     card.addEventListener("click", () => showEditorView(s.id));
+    card.querySelector('[data-act="done"]').addEventListener("click", (e) => {
+      e.stopPropagation();
+      s.ausgefuehrt = !s.ausgefuehrt;
+      saveSession(s);
+      renderListView();
+    });
     card.querySelector('[data-act="dup"]').addEventListener("click", async (e) => {
       e.stopPropagation();
       await duplicateSession(s, { openEditor: false });
-      renderListOrCalendar();
+      renderListView();
     });
     card.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
       e.stopPropagation();
       if (confirm(`Session «${s.titel || "Ohne Titel"}» wirklich löschen?`)) {
         await api("DELETE", "api/sessions/" + s.id);
         sessions = sessions.filter((x) => x.id !== s.id);
-        renderListOrCalendar();
+        renderListView();
       }
     });
     list.appendChild(card);
   }
 }
 
-function renderCalendar() {
-  const cal = $("#calendar");
-  if (!calendarMonth) calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const year = calendarMonth.getFullYear();
-  const month = calendarMonth.getMonth();
-  const monthName = calendarMonth.toLocaleDateString("de-CH", { month: "long", year: "numeric" });
+// ═══════════ Statistik (Spider Chart der Fokus-Tags) ═══════════
 
-  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7; // Mo = 0
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayIso = new Date().toISOString().slice(0, 10);
+function renderStats() {
+  const panel = $("#stats-panel");
+  const done = sessions.filter((s) => s.ausgefuehrt);
+  const counts = FOCUS_TAGS.map((tag) => done.filter((s) => (s.tags || []).includes(tag)).length);
 
-  let cells = "";
-  for (let i = 0; i < firstWeekday; i++) cells += `<div class="cal-cell cal-empty"></div>`;
-  for (let d = 1; d <= daysInMonth; d++) {
-    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    const daySessions = sessions.filter((s) => s.datum === iso);
-    cells += `
-      <div class="cal-cell ${iso === todayIso ? "cal-today" : ""}">
-        <div class="cal-day">${d}</div>
-        ${daySessions.map((s) => `
-          <button class="cal-chip" data-id="${s.id}" title="${esc(s.titel)}">
-            ${s.uhrzeit ? esc(s.uhrzeit) + " " : ""}${esc(s.titel) || "Training"}
-          </button>`).join("")}
+  if (!done.length) {
+    panel.innerHTML = `
+      <div class="panel">
+        <h3>Trainierte Schwerpunkte</h3>
+        <p class="empty-hint">Noch keine Trainings als ausgeführt markiert.<br>
+        Markiere abgeschlossene Trainings mit dem ✓ auf der Karte oder im Editor – hier erscheint dann die Auswertung.</p>
       </div>`;
+    return;
   }
 
-  cal.innerHTML = `
-    <div class="cal-header">
-      <button class="btn" id="cal-prev">←</button>
-      <h3>${monthName}</h3>
-      <button class="btn" id="cal-next">→</button>
-    </div>
-    <div class="cal-grid cal-weekdays">
-      ${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((d) => `<div>${d}</div>`).join("")}
-    </div>
-    <div class="cal-grid">${cells}</div>`;
+  panel.innerHTML = `
+    <div class="panel">
+      <h3>Trainierte Schwerpunkte</h3>
+      <p class="stats-sub">${done.length} ausgeführte${done.length === 1 ? "s" : ""} Training${done.length === 1 ? "" : "s"} · gezählt wird jeder gesetzte Fokus-Tag</p>
+      <div class="stats-grid">
+        ${radarChartSvg(FOCUS_TAGS, counts)}
+        <ul class="stats-list">
+          ${FOCUS_TAGS.map((tag, i) => `
+            <li>
+              <span class="stats-dot"></span>
+              <span class="stats-label">${esc(tag)}</span>
+              <strong>${counts[i]}×</strong>
+            </li>`).join("")}
+        </ul>
+      </div>
+    </div>`;
+}
 
-  $("#cal-prev").addEventListener("click", () => { calendarMonth = new Date(year, month - 1, 1); renderCalendar(); });
-  $("#cal-next").addEventListener("click", () => { calendarMonth = new Date(year, month + 1, 1); renderCalendar(); });
-  cal.querySelectorAll(".cal-chip").forEach((chip) => {
-    chip.addEventListener("click", () => showEditorView(chip.dataset.id));
-  });
+// Spider-/Radar-Chart als Inline-SVG; Farben kommen aus den Theme-Variablen (CSS)
+function radarChartSvg(labels, values) {
+  const cx = 235, cy = 165, R = 110, rings = 4;
+  const n = labels.length;
+  const gridMax = Math.max(rings, Math.ceil(Math.max(...values) / rings) * rings);
+  const angle = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const pt = (i, r) => [cx + r * Math.cos(angle(i)), cy + r * Math.sin(angle(i))];
+  const poly = (r) => labels.map((_, i) => pt(i, r).map((v) => v.toFixed(1)).join(",")).join(" ");
+
+  // Gitterringe + Achsen (dezent)
+  let grid = "";
+  for (let k = 1; k <= rings; k++) grid += `<polygon class="radar-ring" points="${poly((R * k) / rings)}"/>`;
+  let axes = "";
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pt(i, R);
+    axes += `<line class="radar-axis" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+  }
+
+  // Ringwerte entlang der obersten Achse
+  let ringLabels = "";
+  for (let k = 1; k <= rings; k++) {
+    ringLabels += `<text class="radar-ringlabel" x="${cx + 5}" y="${(cy - (R * k) / rings + 3).toFixed(1)}">${(gridMax * k) / rings}</text>`;
+  }
+
+  // Datenpolygon + Eckpunkte
+  const dataPoints = values.map((v, i) => pt(i, (R * v) / gridMax));
+  const dataPoly = dataPoints.map((p) => p.map((v) => v.toFixed(1)).join(",")).join(" ");
+  const dots = dataPoints.map(([x, y], i) =>
+    `<circle class="radar-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4"><title>${esc(labels[i])}: ${values[i]}×</title></circle>`).join("");
+
+  // Achsenbeschriftungen ausserhalb
+  const texts = labels.map((label, i) => {
+    const [x, y] = pt(i, R + 16);
+    const c = Math.cos(angle(i));
+    const anchor = c > 0.3 ? "start" : c < -0.3 ? "end" : "middle";
+    return `<text class="radar-label" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}">${esc(label)}</text>`;
+  }).join("");
+
+  return `
+    <svg class="radar" viewBox="0 0 470 330" role="img" aria-label="Spider Chart der trainierten Schwerpunkte">
+      ${grid}${axes}${ringLabels}
+      <polygon class="radar-area" points="${dataPoly}"/>
+      ${dots}${texts}
+    </svg>`;
 }
 
 async function createSession() {
@@ -264,7 +316,8 @@ async function createSession() {
     datum: new Date().toISOString().slice(0, 10),
     uhrzeit: "",
     ort: "",
-    schwerpunkt: "",
+    tags: [],
+    ausgefuehrt: false,
     notizen: "",
     items: [], // { key, exerciseId, name, kategorie, beschreibung, dauer, notiz }
   };
@@ -277,6 +330,7 @@ async function duplicateSession(src, { openEditor = true, dateShiftDays = 0, tit
   const copy = JSON.parse(JSON.stringify(src));
   copy.id = uid();
   delete copy.shareToken;
+  copy.ausgefuehrt = false; // Kopien/Serien sind neue, noch nicht ausgeführte Trainings
   copy.items.forEach((it) => (it.key = uid()));
   if (dateShiftDays && copy.datum) {
     const d = new Date(copy.datum + "T00:00:00");
@@ -298,46 +352,6 @@ async function createSeries(count) {
   }
 }
 
-// ═══════════ iCal-Export ═══════════
-
-function icalEscape(str) {
-  return String(str || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
-}
-
-function exportIcal() {
-  const events = sessions.filter((s) => s.datum);
-  if (!events.length) { alert("Keine Sessions mit Datum vorhanden."); return; }
-
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//VibeyBall//Trainingsplaner//DE"];
-  for (const s of events) {
-    const date = s.datum.replace(/-/g, "");
-    const dur = totalDuration(s) || 90;
-    lines.push("BEGIN:VEVENT");
-    lines.push("UID:" + s.id + "@vibeyball");
-    lines.push("DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z");
-    if (s.uhrzeit) {
-      const start = s.uhrzeit.replace(":", "") + "00";
-      const end = addMinutes(s.uhrzeit, dur).replace(":", "") + "00";
-      lines.push("DTSTART:" + date + "T" + start);
-      lines.push("DTEND:" + date + "T" + end);
-    } else {
-      lines.push("DTSTART;VALUE=DATE:" + date);
-    }
-    lines.push("SUMMARY:" + icalEscape((s.titel || "Volleyballtraining") + (s.team ? " (" + s.team + ")" : "")));
-    if (s.ort) lines.push("LOCATION:" + icalEscape(s.ort));
-    if (s.schwerpunkt) lines.push("DESCRIPTION:" + icalEscape("Schwerpunkt: " + s.schwerpunkt));
-    lines.push("END:VEVENT");
-  }
-  lines.push("END:VCALENDAR");
-
-  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "vibeyball-trainings.ics";
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
 // ═══════════ Editor: Session-Details ═══════════
 
 const FIELD_MAP = {
@@ -346,7 +360,6 @@ const FIELD_MAP = {
   "f-date": "datum",
   "f-time": "uhrzeit",
   "f-location": "ort",
-  "f-focus": "schwerpunkt",
   "f-notes": "notizen",
 };
 
@@ -355,6 +368,10 @@ function fillEditorForm() {
   for (const [elId, prop] of Object.entries(FIELD_MAP)) {
     document.getElementById(elId).value = s[prop] || "";
   }
+  $("#f-done").checked = !!s.ausgefuehrt;
+  document.querySelectorAll("#f-tags input").forEach((cb) => {
+    cb.checked = (s.tags || []).includes(cb.value);
+  });
 }
 
 function bindEditorForm() {
@@ -367,6 +384,25 @@ function bindEditorForm() {
       if (elId === "f-time") renderPlan(); // Zeitspalten aktualisieren
     });
   }
+
+  $("#f-done").addEventListener("change", (e) => {
+    const s = currentSession();
+    if (!s) return;
+    s.ausgefuehrt = e.target.checked;
+    saveSession(s);
+  });
+
+  // Fokus-Tag-Chips einmalig aufbauen
+  $("#f-tags").innerHTML = FOCUS_TAGS.map((tag) => `
+    <label class="tag-chip"><input type="checkbox" value="${tag}">${tag}</label>`).join("");
+  document.querySelectorAll("#f-tags input").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const s = currentSession();
+      if (!s) return;
+      s.tags = [...document.querySelectorAll("#f-tags input:checked")].map((el) => el.value);
+      saveSession(s);
+    });
+  });
 }
 
 // ═══════════ Editor: Trainingsablauf ═══════════
@@ -616,8 +652,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Übersicht
   $("#btn-new-session").addEventListener("click", createSession);
-  $("#btn-toggle-calendar").addEventListener("click", () => { calendarMode = !calendarMode; renderListOrCalendar(); });
-  $("#btn-ical").addEventListener("click", exportIcal);
+  $("#tab-sessions").addEventListener("click", () => { listTab = "sessions"; renderListView(); });
+  $("#tab-stats").addEventListener("click", () => { listTab = "stats"; renderListView(); });
 
   // Editor
   $("#btn-back").addEventListener("click", showListView);
