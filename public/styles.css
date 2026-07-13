@@ -78,7 +78,8 @@ body {
   flex-wrap: wrap;
   gap: 8px;
 }
-.app-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; }
+.app-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.logo-icon { width: 1.2em; height: 1.2em; flex-shrink: 0; color: var(--accent); }
 .app-header .subtitle { font-size: .85rem; font-weight: 400; opacity: .75; margin-left: 8px; }
 .header-right { display: flex; align-items: center; gap: 10px; }
 .user-box { display: flex; align-items: center; gap: 12px; font-size: .9rem; }
