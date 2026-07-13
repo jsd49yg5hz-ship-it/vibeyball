@@ -6,9 +6,14 @@ const FOCUS_TAGS = ["Annahme", "Block", "Verteidigung", "Zuspiel", "Angriff", "T
 let user = null;
 let sessions = [];
 let customExercises = [];
+let templates = [];
+let favorites = [];        // IDs der favorisierten Übungen
 let currentId = null;      // ID der Session im Editor
 let editingExerciseId = null; // ID der eigenen Übung im Bearbeiten-Dialog
 let listTab = "sessions";  // aktiver Reiter der Übersicht: "sessions" | "stats"
+let statsPeriod = "all";   // Statistik-Filter: "4w" | "3m" | "all"
+let statsMetric = "count"; // "count" | "minutes"
+let statsTeam = "";        // "" = alle Mannschaften
 
 // ═══════════ API ═══════════
 
@@ -31,13 +36,57 @@ function currentSession() {
   return sessions.find((s) => s.id === currentId);
 }
 
-// Speichern mit kurzer Verzögerung, damit nicht jeder Tastendruck einen Request auslöst
+// Speichern mit kurzer Verzögerung, damit nicht jeder Tastendruck einen Request auslöst.
+// Mit sichtbarem Status und automatischen Wiederholungsversuchen bei Netzwerkfehlern.
 const pendingSaves = new Map();
+let lastFailedSession = null;
+
 function saveSession(s) {
+  setSaveStatus("saving");
   clearTimeout(pendingSaves.get(s.id));
-  pendingSaves.set(s.id, setTimeout(() => {
-    api("PUT", "api/sessions/" + s.id, s).catch((e) => console.error("Speichern fehlgeschlagen:", e));
-  }, 400));
+  pendingSaves.set(s.id, setTimeout(() => pushSession(s, 0), 400));
+}
+
+async function pushSession(s, attempt) {
+  try {
+    await api("PUT", "api/sessions/" + s.id, s);
+    lastFailedSession = null;
+    setSaveStatus("saved");
+  } catch (e) {
+    if (attempt < 3) {
+      setTimeout(() => pushSession(s, attempt + 1), 2000 * 2 ** attempt);
+    } else {
+      lastFailedSession = s;
+      setSaveStatus("error");
+    }
+  }
+}
+
+function setSaveStatus(state) {
+  const el = $("#save-status");
+  el.className = "save-status " + state;
+  el.textContent =
+    state === "saving" ? "Speichert …" :
+    state === "saved" ? "✓ Gespeichert" :
+    "⚠ Nicht gespeichert – hier klicken zum Wiederholen";
+}
+
+// ═══════════ Toasts (Meldungen mit optionalem Rückgängig) ═══════════
+
+function toast(message, { undo, duration = 6000 } = {}) {
+  const box = document.createElement("div");
+  box.className = "toast";
+  const text = document.createElement("span");
+  text.textContent = message;
+  box.appendChild(text);
+  if (undo) {
+    const btn = document.createElement("button");
+    btn.textContent = "Rückgängig";
+    btn.addEventListener("click", () => { box.remove(); undo(); });
+    box.appendChild(btn);
+  }
+  $("#toasts").appendChild(box);
+  setTimeout(() => box.remove(), duration);
 }
 
 // ═══════════ Hilfsfunktionen ═══════════
@@ -105,6 +154,13 @@ function showListView() {
 function showEditorView(id) {
   currentId = id;
   switchView("view-editor");
+  // Speicherstatus und Mobile-Ansicht zurücksetzen
+  const status = $("#save-status");
+  status.className = "save-status";
+  status.textContent = "";
+  $("#editor-grid").classList.remove("show-lib");
+  $("#etab-plan").classList.add("active");
+  $("#etab-lib").classList.remove("active");
   fillEditorForm();
   renderPlan();
   renderLibrary();
@@ -147,9 +203,11 @@ async function handleAuthSubmit(e) {
 async function enterApp() {
   $("#user-name").textContent = user.name;
   $("#user-box").classList.remove("hidden");
-  [sessions, customExercises] = await Promise.all([
+  [sessions, customExercises, templates, favorites] = await Promise.all([
     api("GET", "api/sessions"),
     api("GET", "api/exercises"),
+    api("GET", "api/templates"),
+    api("GET", "api/favorites"),
   ]);
   showListView();
 }
@@ -158,6 +216,8 @@ async function logout() {
   await api("POST", "api/logout");
   sessions = [];
   customExercises = [];
+  templates = [];
+  favorites = [];
   setAuthMode("login");
   $("#auth-password").value = "";
   showAuthView();
@@ -217,11 +277,16 @@ function renderSessionList() {
     });
     card.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (confirm(`Session «${s.titel || "Ohne Titel"}» wirklich löschen?`)) {
-        await api("DELETE", "api/sessions/" + s.id);
-        sessions = sessions.filter((x) => x.id !== s.id);
-        renderListView();
-      }
+      await api("DELETE", "api/sessions/" + s.id);
+      sessions = sessions.filter((x) => x.id !== s.id);
+      renderListView();
+      toast(`Session «${s.titel || "Ohne Titel"}» gelöscht.`, {
+        undo: async () => {
+          await api("POST", "api/sessions", s);
+          sessions.push(s);
+          renderListView();
+        },
+      });
     });
     list.appendChild(card);
   }
@@ -229,44 +294,91 @@ function renderSessionList() {
 
 // ═══════════ Statistik (Spider Chart der Fokus-Tags) ═══════════
 
+function statsCutoffIso() {
+  if (statsPeriod === "all") return null;
+  const days = statsPeriod === "4w" ? 28 : 91;
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
 function renderStats() {
   const panel = $("#stats-panel");
-  const done = sessions.filter((s) => s.ausgefuehrt);
-  const counts = FOCUS_TAGS.map((tag) => done.filter((s) => (s.tags || []).includes(tag)).length);
+  const cutoff = statsCutoffIso();
+  const teams = [...new Set(sessions.map((s) => (s.team || "").trim()).filter(Boolean))].sort();
 
-  if (!done.length) {
-    panel.innerHTML = `
-      <div class="panel">
-        <h3>Trainierte Schwerpunkte</h3>
-        <p class="empty-hint">Noch keine Trainings als ausgeführt markiert.<br>
-        Markiere abgeschlossene Trainings mit dem ✓ auf der Karte oder im Editor – hier erscheint dann die Auswertung.</p>
-      </div>`;
-    return;
-  }
+  const done = sessions.filter((s) =>
+    s.ausgefuehrt &&
+    (!cutoff || (s.datum && s.datum >= cutoff)) &&
+    (!statsTeam || (s.team || "").trim() === statsTeam));
 
-  panel.innerHTML = `
-    <div class="panel">
-      <h3>Trainierte Schwerpunkte</h3>
-      <p class="stats-sub">${done.length} ausgeführte${done.length === 1 ? "s" : ""} Training${done.length === 1 ? "" : "s"} · gezählt wird jeder gesetzte Fokus-Tag</p>
+  const values = FOCUS_TAGS.map((tag) => {
+    const matching = done.filter((s) => (s.tags || []).includes(tag));
+    return statsMetric === "minutes"
+      ? matching.reduce((sum, s) => sum + totalDuration(s), 0)
+      : matching.length;
+  });
+  const unit = statsMetric === "minutes" ? " min" : "×";
+
+  const filtersHtml = `
+    <div class="stats-filters">
+      <div class="seg" id="stats-period">
+        <button data-v="4w" class="${statsPeriod === "4w" ? "active" : ""}">4 Wochen</button>
+        <button data-v="3m" class="${statsPeriod === "3m" ? "active" : ""}">3 Monate</button>
+        <button data-v="all" class="${statsPeriod === "all" ? "active" : ""}">Gesamt</button>
+      </div>
+      <div class="seg" id="stats-metric">
+        <button data-v="count" class="${statsMetric === "count" ? "active" : ""}">Anzahl</button>
+        <button data-v="minutes" class="${statsMetric === "minutes" ? "active" : ""}">Minuten</button>
+      </div>
+      ${teams.length > 1 ? `
+        <select id="stats-team">
+          <option value="">Alle Mannschaften</option>
+          ${teams.map((t) => `<option value="${esc(t)}" ${t === statsTeam ? "selected" : ""}>${esc(t)}</option>`).join("")}
+        </select>` : ""}
+    </div>`;
+
+  const contentHtml = done.length
+    ? `
+      <p class="stats-sub">${done.length} ausgeführte${done.length === 1 ? "s" : ""} Training${done.length === 1 ? "" : "s"} im gewählten Zeitraum · gezählt wird jeder gesetzte Fokus-Tag</p>
       <div class="stats-grid">
-        ${radarChartSvg(FOCUS_TAGS, counts)}
+        ${radarChartSvg(FOCUS_TAGS, values, unit)}
         <ul class="stats-list">
           ${FOCUS_TAGS.map((tag, i) => `
             <li>
               <span class="stats-dot"></span>
               <span class="stats-label">${esc(tag)}</span>
-              <strong>${counts[i]}×</strong>
+              <strong>${values[i]}${unit}</strong>
             </li>`).join("")}
         </ul>
-      </div>
-    </div>`;
+      </div>`
+    : `
+      <p class="empty-hint">Keine ausgeführten Trainings im gewählten Zeitraum.<br>
+      Markiere abgeschlossene Trainings mit dem ✓ auf der Karte oder im Editor – hier erscheint dann die Auswertung.</p>`;
+
+  panel.innerHTML = `<div class="panel"><h3>Trainierte Schwerpunkte</h3>${filtersHtml}${contentHtml}</div>`;
+
+  document.querySelectorAll("#stats-period button").forEach((btn) =>
+    btn.addEventListener("click", () => { statsPeriod = btn.dataset.v; renderStats(); }));
+  document.querySelectorAll("#stats-metric button").forEach((btn) =>
+    btn.addEventListener("click", () => { statsMetric = btn.dataset.v; renderStats(); }));
+  document.getElementById("stats-team")?.addEventListener("change", (e) => {
+    statsTeam = e.target.value;
+    renderStats();
+  });
+}
+
+// Ringbeschriftungen «schön» runden: ganze Zahlen bei Anzahlen, Zwanzigerschritte bei Minuten
+function niceGridMax(maxVal, rings) {
+  const base = maxVal > 40 ? 20 : 1;
+  return Math.max(rings, Math.ceil(maxVal / (rings * base)) * rings * base);
 }
 
 // Spider-/Radar-Chart als Inline-SVG; Farben kommen aus den Theme-Variablen (CSS)
-function radarChartSvg(labels, values) {
+function radarChartSvg(labels, values, unit = "") {
   const cx = 235, cy = 165, R = 110, rings = 4;
   const n = labels.length;
-  const gridMax = Math.max(rings, Math.ceil(Math.max(...values) / rings) * rings);
+  const gridMax = niceGridMax(Math.max(...values), rings);
   const angle = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
   const pt = (i, r) => [cx + r * Math.cos(angle(i)), cy + r * Math.sin(angle(i))];
   const poly = (r) => labels.map((_, i) => pt(i, r).map((v) => v.toFixed(1)).join(",")).join(" ");
@@ -290,7 +402,7 @@ function radarChartSvg(labels, values) {
   const dataPoints = values.map((v, i) => pt(i, (R * v) / gridMax));
   const dataPoly = dataPoints.map((p) => p.map((v) => v.toFixed(1)).join(",")).join(" ");
   const dots = dataPoints.map(([x, y], i) =>
-    `<circle class="radar-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4"><title>${esc(labels[i])}: ${values[i]}×</title></circle>`).join("");
+    `<circle class="radar-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4"><title>${esc(labels[i])}: ${values[i]}${unit}</title></circle>`).join("");
 
   // Achsenbeschriftungen ausserhalb
   const texts = labels.map((label, i) => {
@@ -308,22 +420,78 @@ function radarChartSvg(labels, values) {
     </svg>`;
 }
 
-async function createSession() {
+async function createSession(fromTemplate = null) {
   const session = {
     id: uid(),
-    titel: "",
-    team: "",
+    titel: fromTemplate ? fromTemplate.name : "",
+    team: fromTemplate ? fromTemplate.team || "" : "",
     datum: new Date().toISOString().slice(0, 10),
-    uhrzeit: "",
-    ort: "",
-    tags: [],
+    uhrzeit: fromTemplate ? fromTemplate.uhrzeit || "" : "",
+    ort: fromTemplate ? fromTemplate.ort || "" : "",
+    tags: fromTemplate ? [...(fromTemplate.tags || [])] : [],
     ausgefuehrt: false,
-    notizen: "",
-    items: [], // { key, exerciseId, name, kategorie, beschreibung, dauer, notiz }
+    notizen: fromTemplate ? fromTemplate.notizen || "" : "",
+    items: fromTemplate
+      ? fromTemplate.items.map((it) => ({ ...it, key: uid() }))
+      : [], // { key, exerciseId, name, kategorie, beschreibung, dauer, notiz }
   };
   await api("POST", "api/sessions", session);
   sessions.push(session);
   showEditorView(session.id);
+}
+
+// ═══════════ Session-Vorlagen ═══════════
+
+function openNewSessionDialog() {
+  if (!templates.length) { createSession(); return; } // ohne Vorlagen direkt loslegen
+  const list = $("#tpl-list");
+  list.innerHTML = "";
+  for (const tpl of templates) {
+    const total = tpl.items.reduce((sum, it) => sum + (Number(it.dauer) || 0), 0);
+    const row = document.createElement("div");
+    row.className = "tpl-row";
+    row.innerHTML = `
+      <button class="tpl-pick">
+        <span class="tpl-name">${esc(tpl.name)}</span>
+        <span class="tpl-meta">${tpl.items.length} Übungen · ${total} min${tpl.team ? " · " + esc(tpl.team) : ""}</span>
+      </button>
+      <button class="btn-icon danger" title="Vorlage löschen">🗑️</button>`;
+    row.querySelector(".tpl-pick").addEventListener("click", async () => {
+      document.getElementById("dlg-new-session").close();
+      await createSession(tpl);
+    });
+    row.querySelector(".btn-icon").addEventListener("click", async () => {
+      await api("DELETE", "api/templates/" + tpl.id);
+      templates = templates.filter((t) => t.id !== tpl.id);
+      openNewSessionDialog(); // Liste neu aufbauen (schliesst bei 0 Vorlagen nicht)
+      if (!templates.length) document.getElementById("dlg-new-session").close();
+      toast(`Vorlage «${tpl.name}» gelöscht.`, {
+        undo: async () => {
+          await api("POST", "api/templates", tpl);
+          templates.unshift(tpl);
+        },
+      });
+    });
+    list.appendChild(row);
+  }
+  document.getElementById("dlg-new-session").showModal();
+}
+
+async function saveAsTemplate() {
+  const s = currentSession();
+  const tpl = {
+    id: "t_" + uid(),
+    name: s.titel || "Unbenannte Vorlage",
+    team: s.team,
+    uhrzeit: s.uhrzeit,
+    ort: s.ort,
+    tags: [...(s.tags || [])],
+    notizen: s.notizen,
+    items: s.items.map((it) => ({ ...it })),
+  };
+  await api("POST", "api/templates", tpl);
+  templates.unshift(tpl);
+  toast(`Als Vorlage gespeichert: «${tpl.name}»`);
 }
 
 async function duplicateSession(src, { openEditor = true, dateShiftDays = 0, titleSuffix = " (Kopie)" } = {}) {
@@ -407,6 +575,8 @@ function bindEditorForm() {
 
 // ═══════════ Editor: Trainingsablauf ═══════════
 
+let dragIndex = null; // Index des gerade gezogenen Plan-Elements
+
 function renderPlan() {
   const s = currentSession();
   const list = $("#plan-list");
@@ -424,6 +594,7 @@ function renderPlan() {
     const li = document.createElement("li");
     li.className = "plan-item";
     li.innerHTML = `
+      <span class="drag-handle" title="Ziehen zum Verschieben">⠿</span>
       <span class="order">${i + 1}</span>
       <span>
         <span class="name">${esc(ex.name)}</span>
@@ -460,6 +631,38 @@ function renderPlan() {
         renderPlan();
       });
     });
+
+    // Drag & Drop: nur über den Griff startbar, damit Eingabefelder normal bedienbar bleiben
+    const handle = li.querySelector(".drag-handle");
+    handle.addEventListener("mousedown", () => { li.draggable = true; });
+    li.addEventListener("dragstart", (e) => {
+      dragIndex = i;
+      li.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(i)); // Firefox braucht Daten
+    });
+    li.addEventListener("dragend", () => {
+      li.classList.remove("dragging");
+      li.draggable = false;
+      dragIndex = null;
+    });
+    li.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      li.classList.add("drag-over");
+    });
+    li.addEventListener("dragleave", () => li.classList.remove("drag-over"));
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      li.classList.remove("drag-over");
+      if (dragIndex === null || dragIndex === i) return;
+      const [moved] = s.items.splice(dragIndex, 1);
+      s.items.splice(i, 0, moved);
+      dragIndex = null;
+      saveSession(s);
+      renderPlan();
+    });
+
     list.appendChild(li);
   });
 }
@@ -532,14 +735,21 @@ function renderLibrary() {
     return;
   }
 
-  for (const ex of filtered) {
+  // Favoriten zuoberst (stabile Sortierung erhält die Reihenfolge innerhalb der Gruppen)
+  const sorted = [...filtered].sort((a, b) =>
+    (favorites.includes(b.id) ? 1 : 0) - (favorites.includes(a.id) ? 1 : 0));
+
+  for (const ex of sorted) {
     const isCustom = customExercises.some((c) => c.id === ex.id);
+    const isFav = favorites.includes(ex.id);
     const card = document.createElement("div");
     card.className = "exercise-card" + (isCustom ? " custom" : "");
     card.innerHTML = `
       <div class="ex-head">
         <span class="ex-name">${esc(ex.name)}</span>
         <span class="ex-head-actions">
+          <button class="btn-icon star ${isFav ? "is-fav" : ""}" data-act="fav"
+            title="${isFav ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen"}">${isFav ? "★" : "☆"}</button>
           ${isCustom ? `
             <button class="btn-icon" data-act="edit" title="Bearbeiten">✏️</button>
             <button class="btn-icon danger" data-act="delete" title="Löschen">🗑️</button>` : ""}
@@ -555,18 +765,34 @@ function renderLibrary() {
       </div>
       <div class="ex-desc">${esc(ex.beschreibung)}</div>`;
     card.querySelector(".btn-add").addEventListener("click", () => addExerciseToPlan(ex.id));
+    card.querySelector('[data-act="fav"]').addEventListener("click", () => toggleFavorite(ex.id));
     if (isCustom) {
       card.querySelector('[data-act="edit"]').addEventListener("click", () => openExerciseDialog(ex));
       card.querySelector('[data-act="delete"]').addEventListener("click", async () => {
-        if (!confirm(`Übung «${ex.name}» löschen?`)) return;
         await api("DELETE", "api/exercises/" + ex.id);
         customExercises = customExercises.filter((c) => c.id !== ex.id);
         populateCategoryFilter();
         renderLibrary();
+        toast(`Übung «${ex.name}» gelöscht.`, {
+          undo: async () => {
+            await api("POST", "api/exercises", ex);
+            customExercises.unshift(ex);
+            populateCategoryFilter();
+            renderLibrary();
+          },
+        });
       });
     }
     list.appendChild(card);
   }
+}
+
+function toggleFavorite(exerciseId) {
+  favorites = favorites.includes(exerciseId)
+    ? favorites.filter((id) => id !== exerciseId)
+    : [...favorites, exerciseId];
+  api("PUT", "api/favorites", favorites).catch(() => toast("Favoriten konnten nicht gespeichert werden."));
+  renderLibrary();
 }
 
 // ═══════════ Dialog: Eigene Übung ═══════════
@@ -606,6 +832,18 @@ async function handleExerciseSubmit(e) {
   document.getElementById("dlg-exercise").close();
   populateCategoryFilter();
   renderLibrary();
+}
+
+// ═══════════ Backup-Export ═══════════
+
+async function downloadBackup() {
+  const data = await api("GET", "api/export");
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "vibeyball-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ═══════════ Teilen ═══════════
@@ -651,16 +889,38 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#btn-logout").addEventListener("click", logout);
 
   // Übersicht
-  $("#btn-new-session").addEventListener("click", createSession);
+  $("#btn-new-session").addEventListener("click", openNewSessionDialog);
+  $("#btn-blank-session").addEventListener("click", () => {
+    document.getElementById("dlg-new-session").close();
+    createSession();
+  });
+  $("#btn-new-cancel").addEventListener("click", () => document.getElementById("dlg-new-session").close());
+  $("#btn-backup").addEventListener("click", downloadBackup);
   $("#tab-sessions").addEventListener("click", () => { listTab = "sessions"; renderListView(); });
   $("#tab-stats").addEventListener("click", () => { listTab = "stats"; renderListView(); });
 
   // Editor
   $("#btn-back").addEventListener("click", showListView);
+  $("#btn-template").addEventListener("click", saveAsTemplate);
   $("#btn-duplicate").addEventListener("click", () => duplicateSession(currentSession()));
   $("#btn-pdf").addEventListener("click", () => generateSessionPdf(currentSession(), resolveExercise));
   $("#btn-series").addEventListener("click", () => document.getElementById("dlg-series").showModal());
   $("#btn-share").addEventListener("click", openShareDialog);
+  $("#save-status").addEventListener("click", () => {
+    if (lastFailedSession) { setSaveStatus("saving"); pushSession(lastFailedSession, 0); }
+  });
+
+  // Mobile: zwischen Ablauf und Bibliothek umschalten
+  $("#etab-plan").addEventListener("click", () => {
+    $("#editor-grid").classList.remove("show-lib");
+    $("#etab-plan").classList.add("active");
+    $("#etab-lib").classList.remove("active");
+  });
+  $("#etab-lib").addEventListener("click", () => {
+    $("#editor-grid").classList.add("show-lib");
+    $("#etab-lib").classList.add("active");
+    $("#etab-plan").classList.remove("active");
+  });
 
   // Bibliothek
   $("#f-search").addEventListener("input", renderLibrary);
@@ -678,7 +938,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const count = Math.min(52, Math.max(1, Number($("#series-count").value) || 1));
     await createSeries(count);
     document.getElementById("dlg-series").close();
-    alert(count + " weitere Trainings im Wochenabstand erstellt.");
+    toast(count + " weitere Trainings im Wochenabstand erstellt.");
   });
   $("#btn-series-cancel").addEventListener("click", () => document.getElementById("dlg-series").close());
 

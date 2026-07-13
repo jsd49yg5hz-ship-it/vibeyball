@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "invite": "node scripts/invite.js"
+    "invite": "node scripts/invite.js",
+    "test": "node tests/e2e.js"
   },
   "license": "ISC",
   "dependencies": {
@@ -13,5 +14,8 @@
     "better-sqlite3": "^12.11.1",
     "express": "^5.2.1",
     "jspdf": "^4.2.1"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
   }
 }

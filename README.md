@@ -16,13 +16,20 @@ gestaltetes PDF exportieren. Mit Login und zentraler Speicherung auf dem eigenen
 - **Fokus-Tags**: pro Session mehrere Schwerpunkte wählbar (Annahme, Block, Verteidigung,
   Zuspiel, Angriff, Taktik).
 - **Statistik-Reiter**: Spider Chart zeigt, welcher Fokus wie oft trainiert wurde
-  (gezählt werden ausgeführte Trainings).
+  (gezählt werden ausgeführte Trainings) – filterbar nach Zeitraum (4 Wochen / 3 Monate /
+  gesamt), Metrik (Anzahl oder Minuten) und Mannschaft.
+- **Session-Vorlagen**: Struktur einer Session als Vorlage speichern und neue Sessions
+  daraus erstellen.
+- **Übungs-Favoriten**: Übungen mit ★ markieren – Favoriten stehen in der Bibliothek zuoberst.
+- **Backup**: alle eigenen Daten (Sessions, Übungen, Vorlagen) als JSON-Datei herunterladen.
 - **Übungsbibliothek**: 60+ eingebaute Übungen für Indoor-6er-Volleyball (Aufwärmen bis
   Cool-down) mit Volltextsuche und Filtern nach Kategorie und Niveau.
 - **Eigene Übungen**: erstellen, bearbeiten, löschen – inklusive eigener Kategorien.
-- **Trainingsablauf**: Übungen hinzufügen, Dauer anpassen, Reihenfolge ändern, Notizen pro
-  Übung; bei gesetzter Startzeit werden konkrete Uhrzeiten pro Übung berechnet
-  (z. B. 18:30–18:40) und die Gesamtdauer automatisch summiert.
+- **Trainingsablauf**: Übungen hinzufügen, Dauer anpassen, Reihenfolge per Drag & Drop
+  (Griff ⠿) oder Pfeilen ändern, Notizen pro Übung; bei gesetzter Startzeit werden konkrete
+  Uhrzeiten pro Übung berechnet (z. B. 18:30–18:40) und die Gesamtdauer automatisch summiert.
+  Änderungen werden automatisch gespeichert – mit sichtbarem Status und automatischen
+  Wiederholungsversuchen bei Netzwerkproblemen.
 - **PDF-Export**: direkt generiertes, druckfreundliches A4-PDF (jsPDF) – keine Farbflächen,
   klare Typografie mit dezenten Farbakzenten, Zeitspalte, mehrseitiger Umbruch.
 - **Duplizieren & Serien**: Session kopieren oder als wöchentliche Serie wiederholen.
@@ -46,7 +53,20 @@ npm run invite -- 5     # fünf Codes auf einmal
 npm run invite -- list  # alle Codes und ihren Status anzeigen
 ```
 
-Jeder Code ist einmal verwendbar.
+Jeder Code ist einmal verwendbar. Login und Registrierung sind mit Rate-Limiting
+geschützt (10 Fehlversuche pro 15 Minuten).
+
+## Tests
+
+End-to-End-Tests (Playwright, Headless-Chromium):
+
+```bash
+npx playwright install chromium   # einmalig: Browser herunterladen
+npm test
+```
+
+Die Tests laufen auch automatisch bei jedem Push über GitHub Actions
+(`.github/workflows/test.yml`).
 
 Daten (SQLite-Datenbank + Cookie-Signaturschlüssel) landen im Ordner `data/`
 (konfigurierbar über die Umgebungsvariable `DATA_DIR`, Port über `PORT`).

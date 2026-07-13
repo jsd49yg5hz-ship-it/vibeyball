@@ -51,7 +51,15 @@ db.exec(`
     used_by INTEGER REFERENCES users(id),
     used_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS templates (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    data TEXT NOT NULL
+  );
 `);
+
+// Migration: Favoriten-Spalte für bestehende Datenbanken nachrüsten
+try { db.exec("ALTER TABLE users ADD COLUMN favorites TEXT DEFAULT '[]'"); } catch { /* Spalte existiert schon */ }
 
 // ── Auth-Token (HMAC-signiert, im httpOnly-Cookie) ──
 const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 Tage
@@ -93,6 +101,31 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// ── Rate-Limiting für Login/Registrierung (in-memory) ──
+const RATE_LIMIT = 10;                 // Fehlversuche …
+const RATE_WINDOW_MS = 15 * 60 * 1000; // … pro 15 Minuten
+const failedAttempts = new Map();      // key → { count, first }
+
+function clientIp(req) {
+  return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "?";
+}
+
+function isRateLimited(key) {
+  const entry = failedAttempts.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.first > RATE_WINDOW_MS) { failedAttempts.delete(key); return false; }
+  return entry.count >= RATE_LIMIT;
+}
+
+function recordFailure(key) {
+  const entry = failedAttempts.get(key);
+  if (!entry || Date.now() - entry.first > RATE_WINDOW_MS) {
+    failedAttempts.set(key, { count: 1, first: Date.now() });
+  } else {
+    entry.count++;
+  }
+}
+
 // ── App ──
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -101,11 +134,16 @@ app.use(express.static(path.join(__dirname, "public")));
 // ── Auth-Endpunkte ──
 app.post("/api/register", (req, res) => {
   const { name, email, password, invite } = req.body || {};
+  const rateKey = "reg|" + clientIp(req);
+  if (isRateLimited(rateKey)) return res.status(429).json({ error: "Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen." });
   if (!name || !email || !email.includes("@")) return res.status(400).json({ error: "Name und gültige E-Mail angeben." });
   if (!password || password.length < 8) return res.status(400).json({ error: "Passwort braucht mindestens 8 Zeichen." });
   const code = (invite || "").trim().toUpperCase();
   const inviteRow = db.prepare("SELECT code FROM invite_codes WHERE code = ? AND used_by IS NULL").get(code);
-  if (!inviteRow) return res.status(403).json({ error: "Ungültiger oder bereits verwendeter Einladungscode." });
+  if (!inviteRow) {
+    recordFailure(rateKey);
+    return res.status(403).json({ error: "Ungültiger oder bereits verwendeter Einladungscode." });
+  }
   const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email.toLowerCase());
   if (existing) return res.status(409).json({ error: "Diese E-Mail ist bereits registriert." });
   const info = db.prepare("INSERT INTO users (email, name, pass_hash) VALUES (?, ?, ?)")
@@ -118,10 +156,14 @@ app.post("/api/register", (req, res) => {
 
 app.post("/api/login", (req, res) => {
   const { email, password } = req.body || {};
+  const rateKey = "login|" + clientIp(req) + "|" + (email || "").toLowerCase();
+  if (isRateLimited(rateKey)) return res.status(429).json({ error: "Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen." });
   const user = db.prepare("SELECT * FROM users WHERE email = ?").get((email || "").toLowerCase());
   if (!user || !bcrypt.compareSync(password || "", user.pass_hash)) {
+    recordFailure(rateKey);
     return res.status(401).json({ error: "E-Mail oder Passwort falsch." });
   }
+  failedAttempts.delete(rateKey);
   setAuthCookie(res, signToken(user.id));
   res.json({ id: user.id, name: user.name, email: user.email });
 });
@@ -209,6 +251,50 @@ app.put("/api/exercises/:id", requireAuth, (req, res) => {
 app.delete("/api/exercises/:id", requireAuth, (req, res) => {
   db.prepare("DELETE FROM exercises WHERE id = ? AND user_id = ?").run(req.params.id, req.userId);
   res.json({ ok: true });
+});
+
+// ── Session-Vorlagen ──
+app.get("/api/templates", requireAuth, (req, res) => {
+  const rows = db.prepare("SELECT data FROM templates WHERE user_id = ?").all(req.userId);
+  res.json(rows.map((r) => JSON.parse(r.data)));
+});
+
+app.post("/api/templates", requireAuth, (req, res) => {
+  const tpl = req.body;
+  if (!tpl || !tpl.id || !tpl.name) return res.status(400).json({ error: "Ungültige Vorlage." });
+  db.prepare("INSERT INTO templates (id, user_id, data) VALUES (?, ?, ?)").run(tpl.id, req.userId, JSON.stringify(tpl));
+  res.status(201).json({ ok: true });
+});
+
+app.delete("/api/templates/:id", requireAuth, (req, res) => {
+  db.prepare("DELETE FROM templates WHERE id = ? AND user_id = ?").run(req.params.id, req.userId);
+  res.json({ ok: true });
+});
+
+// ── Übungs-Favoriten ──
+app.get("/api/favorites", requireAuth, (req, res) => {
+  const row = db.prepare("SELECT favorites FROM users WHERE id = ?").get(req.userId);
+  try { res.json(JSON.parse(row.favorites || "[]")); } catch { res.json([]); }
+});
+
+app.put("/api/favorites", requireAuth, (req, res) => {
+  const favs = req.body;
+  if (!Array.isArray(favs) || favs.some((f) => typeof f !== "string")) {
+    return res.status(400).json({ error: "Ungültige Favoritenliste." });
+  }
+  db.prepare("UPDATE users SET favorites = ? WHERE id = ?").run(JSON.stringify(favs), req.userId);
+  res.json({ ok: true });
+});
+
+// ── Backup-Export ──
+app.get("/api/export", requireAuth, (req, res) => {
+  const parse = (rows) => rows.map((r) => JSON.parse(r.data));
+  res.json({
+    exportedAt: new Date().toISOString(),
+    sessions: parse(db.prepare("SELECT data FROM sessions WHERE user_id = ?").all(req.userId)),
+    exercises: parse(db.prepare("SELECT data FROM exercises WHERE user_id = ?").all(req.userId)),
+    templates: parse(db.prepare("SELECT data FROM templates WHERE user_id = ?").all(req.userId)),
+  });
 });
 
 app.listen(PORT, () => {

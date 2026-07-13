@@ -59,6 +59,7 @@
         <button class="tab" id="tab-stats">Statistik</button>
       </div>
       <div class="toolbar-actions">
+        <button class="btn" id="btn-backup" title="Alle Daten als JSON-Datei sichern">⬇ Backup</button>
         <button class="btn btn-primary" id="btn-new-session">+ Neue Session</button>
       </div>
     </div>
@@ -72,8 +73,12 @@
   <!-- ═══════════ Ansicht: Session-Editor ═══════════ -->
   <main id="view-editor" class="view hidden">
     <div class="toolbar">
-      <button class="btn" id="btn-back">← Zur Übersicht</button>
+      <span class="toolbar-left">
+        <button class="btn" id="btn-back">← Zur Übersicht</button>
+        <span id="save-status" class="save-status" role="status"></span>
+      </span>
       <div class="toolbar-actions">
+        <button class="btn" id="btn-template" title="Struktur dieser Session als Vorlage speichern">💾 Als Vorlage</button>
         <button class="btn" id="btn-duplicate" title="Kopie dieser Session anlegen">📋 Duplizieren</button>
         <button class="btn" id="btn-series" title="Session wöchentlich wiederholen">🔁 Serie</button>
         <button class="btn" id="btn-share" title="Read-only-Link zum Teilen erzeugen">🔗 Teilen</button>
@@ -81,9 +86,14 @@
       </div>
     </div>
 
-    <div class="editor-grid">
+    <div class="editor-tabs">
+      <button class="tab active" id="etab-plan">Session &amp; Ablauf</button>
+      <button class="tab" id="etab-lib">Übungsbibliothek</button>
+    </div>
+
+    <div class="editor-grid" id="editor-grid">
       <!-- Linke Spalte: Session-Daten & Ablauf -->
-      <section class="panel">
+      <section class="panel panel-plan">
         <h3>Session-Details</h3>
         <div class="form-grid">
           <label>Titel
@@ -125,7 +135,7 @@
       </section>
 
       <!-- Rechte Spalte: Übungsbibliothek -->
-      <section class="panel">
+      <section class="panel panel-lib">
         <div class="plan-header">
           <h3>Übungsbibliothek</h3>
           <button class="btn" id="btn-new-exercise">+ Eigene Übung</button>
@@ -200,6 +210,17 @@
     </form>
   </dialog>
 
+  <!-- ═══════════ Dialog: Neue Session (leer oder aus Vorlage) ═══════════ -->
+  <dialog id="dlg-new-session">
+    <h3>Neue Trainingssession</h3>
+    <button class="btn btn-primary btn-block" id="btn-blank-session">Leere Session erstellen</button>
+    <p class="dlg-hint tpl-hint">Oder aus einer Vorlage:</p>
+    <div id="tpl-list" class="tpl-list"></div>
+    <div class="dlg-actions">
+      <button class="btn" id="btn-new-cancel">Abbrechen</button>
+    </div>
+  </dialog>
+
   <!-- ═══════════ Dialog: Teilen ═══════════ -->
   <dialog id="dlg-share">
     <h3>Trainingsplan teilen</h3>
@@ -213,6 +234,8 @@
       <button class="btn" id="btn-share-close">Schliessen</button>
     </div>
   </dialog>
+
+  <div id="toasts" class="toasts"></div>
 
   <script src="vendor/jspdf.umd.min.js"></script>
   <script src="exercises.js"></script>
