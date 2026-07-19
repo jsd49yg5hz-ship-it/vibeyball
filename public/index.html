@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>VibeyBall – Volleyball-Trainingsplaner</title>
   <meta name="theme-color" content="#16203c">
   <link rel="manifest" href="manifest.webmanifest">
@@ -38,6 +38,20 @@
 
   <!-- ═══════════ Ansicht: Login / Registrierung ═══════════ -->
   <main id="view-auth" class="view view-auth hidden">
+    <div class="auth-wrap">
+      <div class="auth-hero">
+        <svg class="auth-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 12a13.3 13.3 0 0 0 0-10"/>
+        <path d="M12 12a13.3 13.3 0 0 0-8.66 5"/>
+        <path d="M12 12a13.3 13.3 0 0 0 8.66 5"/>
+        <path d="M11.26 6.99a16.4 16.4 0 0 1 10.6 3.74"/>
+        <path d="M6.32 3.7a16.4 16.4 0 0 1 1.94 11.06"/>
+        <path d="M18.34 17.66a16.4 16.4 0 0 1-12.5-1.42"/>
+      </svg>
+        <h2>Willkommen bei VibeyBall</h2>
+        <p>Trainings planen, Übungen finden, Fortschritt sehen.</p>
+      </div>
     <div class="auth-card">
       <div class="auth-tabs">
         <button id="tab-login" class="auth-tab active">Anmelden</button>
@@ -60,6 +74,7 @@
         <button type="submit" class="btn btn-primary btn-block" id="auth-submit">Anmelden</button>
       </form>
     </div>
+    </div>
   </main>
 
   <!-- ═══════════ Ansicht: Übersicht (Trainings | Statistik) ═══════════ -->
@@ -81,7 +96,16 @@
     <div id="session-list" class="session-list"></div>
     <div id="stats-panel" class="hidden"></div>
     <p id="empty-hint" class="empty-hint hidden">
-      Noch keine Sessions vorhanden. Erstelle deine erste Trainingssession!
+      <svg class="empty-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 12a13.3 13.3 0 0 0 0-10"/>
+        <path d="M12 12a13.3 13.3 0 0 0-8.66 5"/>
+        <path d="M12 12a13.3 13.3 0 0 0 8.66 5"/>
+        <path d="M11.26 6.99a16.4 16.4 0 0 1 10.6 3.74"/>
+        <path d="M6.32 3.7a16.4 16.4 0 0 1 1.94 11.06"/>
+        <path d="M18.34 17.66a16.4 16.4 0 0 1-12.5-1.42"/>
+      </svg>
+      <span>Noch keine Sessions vorhanden.<br>Erstelle deine erste Trainingssession!</span>
     </p>
   </main>
 

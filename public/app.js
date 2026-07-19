@@ -205,6 +205,10 @@ function switchView(id) {
   for (const v of ["view-auth", "view-list", "view-editor"]) {
     document.getElementById(v).classList.toggle("hidden", v !== id);
   }
+  // Karten-Entrance-Animationen nur direkt nach dem Ansichtswechsel abspielen
+  document.body.classList.add("view-entering");
+  clearTimeout(switchView.timer);
+  switchView.timer = setTimeout(() => document.body.classList.remove("view-entering"), 700);
 }
 
 function showAuthView() {

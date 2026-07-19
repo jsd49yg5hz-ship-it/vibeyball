@@ -569,7 +569,170 @@ body.read-only .btn-icon.star { pointer-events: none; opacity: .5; }
 .invites-list { margin-top: 12px; }
 #btn-invite-create { width: 100%; }
 
-/* ═══════════ Scrollbar (dezent, thematisch) ═══════════ */
-.exercise-list::-webkit-scrollbar { width: 8px; }
-.exercise-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-.exercise-list::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+/* ═══════════ Scrollbar (dezent, thematisch, global) ═══════════ */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ═══════════ Animationen ═══════════ */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dlg-in {
+  from { opacity: 0; transform: scale(.95) translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes radar-in {
+  from { opacity: 0; transform: scale(.6); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop {
+  0% { transform: scale(.6); }
+  60% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* Ansichtswechsel: display none→block triggert die Animation automatisch neu */
+.view { animation: fade-up .28s ease-out; }
+
+/* Karten gestaffelt einblenden – aber nur direkt nach einem Ansichtswechsel
+   (body.view-entering wird von switchView kurz gesetzt). So flackern
+   Re-Renders (Suche tippen, Dauer ändern, Toggles) nicht. */
+body.view-entering .session-card,
+body.view-entering .exercise-card,
+body.view-entering .plan-item { animation: fade-up .3s ease-out both; }
+body.view-entering :is(.session-card, .exercise-card, .plan-item):nth-child(2) { animation-delay: .04s; }
+body.view-entering :is(.session-card, .exercise-card, .plan-item):nth-child(3) { animation-delay: .08s; }
+body.view-entering :is(.session-card, .exercise-card, .plan-item):nth-child(4) { animation-delay: .12s; }
+body.view-entering :is(.session-card, .exercise-card, .plan-item):nth-child(5) { animation-delay: .16s; }
+body.view-entering :is(.session-card, .exercise-card, .plan-item):nth-child(6) { animation-delay: .2s; }
+.plan-item.dragging, .plan-item.drag-over { animation: none !important; }
+
+/* Dialoge: sanft öffnen, Backdrop einblenden */
+dialog[open] { animation: dlg-in .22s ease-out; }
+dialog[open]::backdrop { animation: backdrop-in .22s ease-out; }
+
+/* Spider Chart wächst aus dem Zentrum */
+.radar-area, .radar-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: radar-in .45s cubic-bezier(.2, .8, .3, 1.1) both;
+}
+.radar-dot { animation-delay: .15s; animation-duration: .35s; }
+
+/* Mikro-Interaktionen (Stern nur per Transition – die Bibliothek rendert beim
+   Suchen ständig neu, eine Keyframe-Animation würde dort dauerpulsieren) */
+.btn-icon.star { transition: transform .15s, color .15s; }
+.btn-icon.star:hover { transform: scale(1.2); }
+.done-toggle.is-done { animation: pop .3s ease-out; }
+.logo-icon { transition: transform .5s cubic-bezier(.3, 1.4, .4, 1); }
+.app-header h1:hover .logo-icon { transform: rotate(180deg); }
+.btn:active, .btn-add:active, .tab:active { transform: scale(.97); }
+.save-status { transition: color .25s, opacity .25s; }
+.toast { animation: toast-in .25s cubic-bezier(.2, .9, .3, 1.15); }
+.tag-chip:has(input:checked) { animation: pop .25s ease-out; }
+.badge.done { animation: pop .3s ease-out; }
+
+/* Barrierefreiheit: Bewegungen respektvoll abschalten */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* ═══════════ Auth-Hero & Empty States ═══════════ */
+.auth-wrap { display: flex; flex-direction: column; align-items: center; gap: 22px; width: 100%; max-width: 390px; }
+.auth-hero { text-align: center; color: var(--text); }
+.auth-hero .auth-logo {
+  width: 64px; height: 64px; color: var(--accent);
+  filter: drop-shadow(0 4px 12px rgba(234, 88, 12, .3));
+}
+.auth-hero h2 { font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em; margin-top: 6px; }
+.auth-hero p { color: var(--muted); font-size: .9rem; margin-top: 2px; }
+.auth-card { width: 100%; }
+
+.empty-hint { display: block; }
+.empty-logo {
+  display: block; width: 84px; height: 84px; margin: 0 auto 14px;
+  color: var(--muted); opacity: .3;
+}
+
+/* ═══════════ Mobile-Feinschliff ═══════════ */
+/* Safe-Area für Notch/Home-Indicator (installierte PWA) */
+.app-header {
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+  padding-top: max(14px, env(safe-area-inset-top));
+}
+.toasts { bottom: max(20px, env(safe-area-inset-bottom)); }
+
+@media (max-width: 700px) {
+  /* Kompakter Header: Untertitel weg, Konto-Knopf als Symbol */
+  .app-header { padding-bottom: 10px; gap: 6px; }
+  .app-header .subtitle { display: none; }
+  .app-header h1 { font-size: 1.15rem; }
+  #btn-account #user-name { display: none; }
+  #btn-account::before { content: "👤"; }
+  .user-box { gap: 6px; }
+  .btn-header { padding: 8px 10px; }
+  .workspace-select { max-width: 130px; }
+
+  /* Übersichts-Toolbar: horizontal scrollbar statt Umbruch-Chaos */
+  .toolbar { align-items: stretch; }
+  .toolbar-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    padding-bottom: 4px;
+    max-width: 100%;
+    scrollbar-width: none;
+  }
+  .toolbar-actions::-webkit-scrollbar { display: none; }
+  .toolbar-actions .btn { flex-shrink: 0; scroll-snap-align: start; }
+  #btn-new-session { order: -1; } /* wichtigster Knopf zuerst sichtbar */
+
+  .view { padding: 16px 14px 60px; }
+  .panel { padding: 16px 14px; }
+}
+
+@media (max-width: 600px) {
+  /* Dialoge als Bottom-Sheets */
+  dialog {
+    position: fixed;
+    margin: 0;
+    top: auto; bottom: 0; left: 0; right: 0;
+    width: 100%; max-width: 100%;
+    border-radius: 18px 18px 0 0;
+    border-left: none; border-right: none; border-bottom: none;
+    max-height: 92dvh;
+    overflow-y: auto;
+    padding-bottom: max(22px, env(safe-area-inset-bottom));
+  }
+  dialog[open] { animation: sheet-in .28s cubic-bezier(.2, .9, .3, 1); }
+  .dlg-sketch { width: 100%; }
+  .sketch-canvas { max-height: 46dvh; }
+}
+
+@media (max-width: 900px) {
+  /* Editor-Tabs bleiben beim Scrollen erreichbar */
+  .editor-tabs {
+    position: sticky;
+    top: 8px;
+    z-index: 20;
+    box-shadow: var(--shadow-lift);
+  }
+}
