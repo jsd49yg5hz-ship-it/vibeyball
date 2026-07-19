@@ -3,15 +3,17 @@
  * - API-GETs laufen network-first; die letzte erfolgreiche Antwort dient als Offline-Fallback
  * So lassen sich Trainingspläne auch in Hallen ohne Empfang noch ansehen. */
 
-const CACHE_VERSION = "vibeyball-v1";
+const CACHE_VERSION = "vibeyball-v2";
 const STATIC_ASSETS = [
   ".",
   "index.html",
   "styles.css",
+  "theme-init.js",
   "app.js",
   "exercises.js",
   "pdf.js",
   "sketch.js",
+  "share.js",
   "vendor/jspdf.umd.min.js",
   "manifest.webmanifest",
   "icons/icon-192.png",

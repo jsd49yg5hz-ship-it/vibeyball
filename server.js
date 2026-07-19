@@ -78,6 +78,27 @@ db.exec(`
 // Migrationen für bestehende Datenbanken
 try { db.exec("ALTER TABLE users ADD COLUMN favorites TEXT DEFAULT '[]'"); } catch { /* Spalte existiert schon */ }
 try { db.exec("ALTER TABLE exercises ADD COLUMN public INTEGER DEFAULT 0"); } catch { /* Spalte existiert schon */ }
+try { db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0"); } catch { /* Spalte existiert schon */ }
+try { db.exec("ALTER TABLE sessions ADD COLUMN version INTEGER DEFAULT 0"); } catch { /* Spalte existiert schon */ }
+try { db.exec("ALTER TABLE sessions ADD COLUMN updated_by INTEGER"); } catch { /* Spalte existiert schon */ }
+try { db.exec("ALTER TABLE sessions ADD COLUMN share_expires TEXT"); } catch { /* Spalte existiert schon */ }
+try { db.exec("ALTER TABLE exercise_images ADD COLUMN updated_at TEXT"); } catch { /* Spalte existiert schon */ }
+
+// Persistente Fehlversuch-Zähler fürs Rate-Limiting (überlebt Neustarts)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS login_attempts (
+    key TEXT PRIMARY KEY,
+    count INTEGER NOT NULL,
+    first INTEGER NOT NULL
+  );
+`);
+
+// Bestehende Instanzen: ältester Benutzer wird Admin, falls noch keiner existiert
+db.prepare(`
+  UPDATE users SET is_admin = 1
+  WHERE id = (SELECT MIN(id) FROM users)
+    AND NOT EXISTS (SELECT 1 FROM users WHERE is_admin = 1)
+`).run();
 
 // ── Auth-Token (HMAC-signiert, im httpOnly-Cookie) ──
 const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 Tage
@@ -123,7 +144,9 @@ function requireAuth(req, res, next) {
 // Ohne Header (oder eigene ID) arbeitet man in den eigenen Daten mit vollen Rechten;
 // fremde Workspaces erfordern eine Mitgliedschaft (Rolle read oder edit).
 function workspace(req, res, next) {
-  const ws = parseInt(req.headers["x-workspace"], 10) || req.userId;
+  // Query-Parameter als Alternative zum Header, damit auch <img src>-Requests
+  // (die keine eigenen Header setzen können) workspace-scoped funktionieren.
+  const ws = parseInt(req.headers["x-workspace"], 10) || parseInt(req.query.ws, 10) || req.userId;
   if (ws === req.userId) {
     req.wsId = ws;
     req.canWrite = true;
@@ -141,33 +164,61 @@ function requireWrite(req, res, next) {
   next();
 }
 
-// ── Rate-Limiting für Login/Registrierung (in-memory) ──
+// ── Rate-Limiting für Login/Registrierung (persistent in SQLite) ──
 const RATE_LIMIT = 10;                 // Fehlversuche …
 const RATE_WINDOW_MS = 15 * 60 * 1000; // … pro 15 Minuten
-const failedAttempts = new Map();      // key → { count, first }
+
+// Alte Einträge beim Start aufräumen
+db.prepare("DELETE FROM login_attempts WHERE first < ?").run(Date.now() - RATE_WINDOW_MS);
 
 function clientIp(req) {
   return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "?";
 }
 
 function isRateLimited(key) {
-  const entry = failedAttempts.get(key);
+  const entry = db.prepare("SELECT count, first FROM login_attempts WHERE key = ?").get(key);
   if (!entry) return false;
-  if (Date.now() - entry.first > RATE_WINDOW_MS) { failedAttempts.delete(key); return false; }
+  if (Date.now() - entry.first > RATE_WINDOW_MS) {
+    db.prepare("DELETE FROM login_attempts WHERE key = ?").run(key);
+    return false;
+  }
   return entry.count >= RATE_LIMIT;
 }
 
 function recordFailure(key) {
-  const entry = failedAttempts.get(key);
+  const entry = db.prepare("SELECT count, first FROM login_attempts WHERE key = ?").get(key);
   if (!entry || Date.now() - entry.first > RATE_WINDOW_MS) {
-    failedAttempts.set(key, { count: 1, first: Date.now() });
+    db.prepare("INSERT OR REPLACE INTO login_attempts (key, count, first) VALUES (?, 1, ?)").run(key, Date.now());
   } else {
-    entry.count++;
+    db.prepare("UPDATE login_attempts SET count = count + 1 WHERE key = ?").run(key);
   }
+}
+
+function clearFailures(key) {
+  db.prepare("DELETE FROM login_attempts WHERE key = ?").run(key);
+}
+
+function requireAdmin(req, res, next) {
+  const row = db.prepare("SELECT is_admin FROM users WHERE id = ?").get(req.userId);
+  if (!row?.is_admin) return res.status(403).json({ error: "Nur für Administratoren." });
+  next();
 }
 
 // ── App ──
 const app = express();
+
+// Security-Header (CSP ohne Inline-Skripte; Inline-Styles bleiben erlaubt)
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "same-origin");
+  res.setHeader("Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; " +
+    "base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+  next();
+});
+
 app.use(express.json({ limit: "8mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -186,12 +237,14 @@ app.post("/api/register", (req, res) => {
   }
   const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email.toLowerCase());
   if (existing) return res.status(409).json({ error: "Diese E-Mail ist bereits registriert." });
-  const info = db.prepare("INSERT INTO users (email, name, pass_hash) VALUES (?, ?, ?)")
-    .run(email.toLowerCase(), name, bcrypt.hashSync(password, 10));
+  // Der erste registrierte Benutzer wird automatisch Administrator
+  const isFirst = !db.prepare("SELECT id FROM users LIMIT 1").get();
+  const info = db.prepare("INSERT INTO users (email, name, pass_hash, is_admin) VALUES (?, ?, ?, ?)")
+    .run(email.toLowerCase(), name, bcrypt.hashSync(password, 10), isFirst ? 1 : 0);
   db.prepare("UPDATE invite_codes SET used_by = ?, used_at = datetime('now') WHERE code = ?")
     .run(info.lastInsertRowid, code);
   setAuthCookie(res, signToken(info.lastInsertRowid));
-  res.status(201).json({ id: info.lastInsertRowid, name, email: email.toLowerCase() });
+  res.status(201).json({ id: info.lastInsertRowid, name, email: email.toLowerCase(), isAdmin: !!isFirst });
 });
 
 app.post("/api/login", (req, res) => {
@@ -203,9 +256,9 @@ app.post("/api/login", (req, res) => {
     recordFailure(rateKey);
     return res.status(401).json({ error: "E-Mail oder Passwort falsch." });
   }
-  failedAttempts.delete(rateKey);
+  clearFailures(rateKey);
   setAuthCookie(res, signToken(user.id));
-  res.json({ id: user.id, name: user.name, email: user.email });
+  res.json({ id: user.id, name: user.name, email: user.email, isAdmin: !!user.is_admin });
 });
 
 app.post("/api/logout", (_req, res) => {
@@ -214,29 +267,50 @@ app.post("/api/logout", (_req, res) => {
 });
 
 app.get("/api/me", requireAuth, (req, res) => {
-  const user = db.prepare("SELECT id, name, email FROM users WHERE id = ?").get(req.userId);
-  res.json(user);
+  const user = db.prepare("SELECT id, name, email, is_admin FROM users WHERE id = ?").get(req.userId);
+  res.json({ id: user.id, name: user.name, email: user.email, isAdmin: !!user.is_admin });
 });
 
 // ── Trainingssessions (und Matchtage: gleiche Tabelle, typ = "match") ──
 app.get("/api/sessions", requireAuth, workspace, (req, res) => {
-  const rows = db.prepare("SELECT data, share_token FROM sessions WHERE user_id = ?").all(req.wsId);
-  res.json(rows.map((r) => ({ ...JSON.parse(r.data), shareToken: r.share_token })));
+  const rows = db.prepare("SELECT data, share_token, version FROM sessions WHERE user_id = ?").all(req.wsId);
+  res.json(rows.map((r) => ({ ...JSON.parse(r.data), shareToken: r.share_token, version: r.version })));
 });
 
 app.post("/api/sessions", requireAuth, workspace, requireWrite, (req, res) => {
   const s = req.body;
   if (!s || !s.id) return res.status(400).json({ error: "Ungültige Session." });
-  db.prepare("INSERT INTO sessions (id, user_id, data, updated_at) VALUES (?, ?, ?, datetime('now'))")
-    .run(s.id, req.wsId, JSON.stringify(s));
-  res.status(201).json({ ok: true });
+  db.prepare("INSERT INTO sessions (id, user_id, data, version, updated_by, updated_at) VALUES (?, ?, ?, 0, ?, datetime('now'))")
+    .run(s.id, req.wsId, JSON.stringify(s), req.userId);
+  res.status(201).json({ ok: true, version: 0 });
 });
 
+// Optimistische Sperre: Der Client schickt die Version mit, die er zuletzt gesehen
+// hat. Hat inzwischen jemand anderes gespeichert, gibt es 409 samt aktuellem Stand.
 app.put("/api/sessions/:id", requireAuth, workspace, requireWrite, (req, res) => {
-  const info = db.prepare("UPDATE sessions SET data = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
-    .run(JSON.stringify(req.body), req.params.id, req.wsId);
-  if (!info.changes) return res.status(404).json({ error: "Session nicht gefunden." });
-  res.json({ ok: true });
+  const row = db.prepare("SELECT version, updated_by FROM sessions WHERE id = ? AND user_id = ?")
+    .get(req.params.id, req.wsId);
+  if (!row) return res.status(404).json({ error: "Session nicht gefunden." });
+
+  const expected = Number.isInteger(req.body.version) ? req.body.version : row.version;
+  const info = db.prepare(`
+    UPDATE sessions SET data = ?, version = version + 1, updated_by = ?, updated_at = datetime('now')
+    WHERE id = ? AND user_id = ? AND version = ?
+  `).run(JSON.stringify(req.body), req.userId, req.params.id, req.wsId, expected);
+
+  if (!info.changes) {
+    const current = db.prepare(`
+      SELECT s.data, s.version, s.share_token, u.name AS editor
+      FROM sessions s LEFT JOIN users u ON u.id = s.updated_by
+      WHERE s.id = ? AND s.user_id = ?
+    `).get(req.params.id, req.wsId);
+    return res.status(409).json({
+      error: "Diese Session wurde inzwischen geändert.",
+      editor: current.editor || "einer anderen Person",
+      current: { ...JSON.parse(current.data), shareToken: current.share_token, version: current.version },
+    });
+  }
+  res.json({ ok: true, version: expected + 1 });
 });
 
 app.delete("/api/sessions/:id", requireAuth, workspace, requireWrite, (req, res) => {
@@ -244,13 +318,16 @@ app.delete("/api/sessions/:id", requireAuth, workspace, requireWrite, (req, res)
   res.json({ ok: true });
 });
 
-// ── Teilen-Links ──
+// ── Teilen-Links (mit Ablaufdatum) ──
 app.post("/api/sessions/:id/share", requireAuth, workspace, requireWrite, (req, res) => {
   const row = db.prepare("SELECT share_token FROM sessions WHERE id = ? AND user_id = ?").get(req.params.id, req.wsId);
   if (!row) return res.status(404).json({ error: "Session nicht gefunden." });
+  const days = [7, 30, 365].includes(Number(req.body?.days)) ? Number(req.body.days) : 30;
   const token = row.share_token || crypto.randomBytes(12).toString("base64url");
-  db.prepare("UPDATE sessions SET share_token = ? WHERE id = ?").run(token, req.params.id);
-  res.json({ token });
+  db.prepare("UPDATE sessions SET share_token = ?, share_expires = datetime('now', ?) WHERE id = ?")
+    .run(token, `+${days} days`, req.params.id);
+  const expires = db.prepare("SELECT share_expires FROM sessions WHERE id = ?").get(req.params.id).share_expires;
+  res.json({ token, expires });
 });
 
 app.delete("/api/sessions/:id/share", requireAuth, workspace, requireWrite, (req, res) => {
@@ -259,8 +336,11 @@ app.delete("/api/sessions/:id/share", requireAuth, workspace, requireWrite, (req
 });
 
 app.get("/api/shared/:token", (req, res) => {
-  const row = db.prepare("SELECT user_id, data FROM sessions WHERE share_token = ?").get(req.params.token);
+  const row = db.prepare("SELECT user_id, data, share_expires FROM sessions WHERE share_token = ?").get(req.params.token);
   if (!row) return res.status(404).json({ error: "Geteilter Plan nicht gefunden." });
+  if (row.share_expires && row.share_expires < new Date().toISOString().slice(0, 19).replace("T", " ")) {
+    return res.status(410).json({ error: "Dieser Teilen-Link ist abgelaufen." });
+  }
   const session = JSON.parse(row.data);
   // Skizzen der verwendeten Übungen mitliefern, damit die geteilte Ansicht sie zeigen kann
   const images = {};
@@ -310,9 +390,45 @@ app.delete("/api/exercises/:id", requireAuth, workspace, requireWrite, (req, res
 });
 
 // ── Übungs-Skizzen/Bilder (pro Workspace, für beliebige Übungen) ──
+// Die Liste liefert nur Metadaten (Versionsstempel + Typ), die Bilddaten selbst
+// kommen einzeln und cachebar über GET /api/exercise-images/:id.
 app.get("/api/exercise-images", requireAuth, workspace, (req, res) => {
-  const rows = db.prepare("SELECT exercise_id, data FROM exercise_images WHERE user_id = ?").all(req.wsId);
-  res.json(Object.fromEntries(rows.map((r) => [r.exercise_id, r.data])));
+  const rows = db.prepare(`
+    SELECT exercise_id, updated_at,
+           CASE WHEN data LIKE 'data:image/svg%' THEN 'svg' ELSE 'raster' END AS type
+    FROM exercise_images WHERE user_id = ?
+    UNION
+    SELECT ei.exercise_id, ei.updated_at,
+           CASE WHEN ei.data LIKE 'data:image/svg%' THEN 'svg' ELSE 'raster' END AS type
+    FROM exercise_images ei
+    JOIN exercises e ON e.id = ei.exercise_id AND e.user_id = ei.user_id
+    WHERE e.public = 1 AND e.user_id != ?
+  `).all(req.wsId, req.wsId);
+  res.json(Object.fromEntries(rows.map((r) => [r.exercise_id, { v: r.updated_at || "0", type: r.type }])));
+});
+
+// Data-URL aus der Datenbank in echte Bild-Bytes umwandeln und cachebar ausliefern
+function sendImage(res, dataUrl) {
+  const match = dataUrl.match(/^data:(image\/[a-z+.-]+);base64,(.*)$/s);
+  if (!match) return res.status(500).json({ error: "Bild beschädigt." });
+  res.setHeader("Content-Type", match[1]);
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+  res.send(Buffer.from(match[2], "base64"));
+}
+
+app.get("/api/exercise-images/:exerciseId", requireAuth, workspace, (req, res) => {
+  let row = db.prepare("SELECT data FROM exercise_images WHERE user_id = ? AND exercise_id = ?")
+    .get(req.wsId, req.params.exerciseId);
+  if (!row) {
+    // Fallback: Skizze des Autors einer instanzweit geteilten Übung
+    row = db.prepare(`
+      SELECT ei.data FROM exercise_images ei
+      JOIN exercises e ON e.id = ei.exercise_id AND e.user_id = ei.user_id
+      WHERE ei.exercise_id = ? AND e.public = 1
+    `).get(req.params.exerciseId);
+  }
+  if (!row) return res.status(404).json({ error: "Keine Skizze vorhanden." });
+  sendImage(res, row.data);
 });
 
 app.put("/api/exercise-images/:exerciseId", requireAuth, workspace, requireWrite, (req, res) => {
@@ -320,13 +436,36 @@ app.put("/api/exercise-images/:exerciseId", requireAuth, workspace, requireWrite
   if (typeof data !== "string" || !data.startsWith("data:image/") || data.length > 2_000_000) {
     return res.status(400).json({ error: "Ungültiges oder zu grosses Bild (max. ~1.5 MB)." });
   }
-  db.prepare("INSERT OR REPLACE INTO exercise_images (user_id, exercise_id, data) VALUES (?, ?, ?)")
+  db.prepare("INSERT OR REPLACE INTO exercise_images (user_id, exercise_id, data, updated_at) VALUES (?, ?, ?, datetime('now'))")
     .run(req.wsId, req.params.exerciseId, data);
   res.json({ ok: true });
 });
 
 app.delete("/api/exercise-images/:exerciseId", requireAuth, workspace, requireWrite, (req, res) => {
   db.prepare("DELETE FROM exercise_images WHERE user_id = ? AND exercise_id = ?").run(req.wsId, req.params.exerciseId);
+  res.json({ ok: true });
+});
+
+// ── Einladungscodes (Admin) ──
+app.get("/api/invites", requireAuth, requireAdmin, (_req, res) => {
+  const rows = db.prepare(`
+    SELECT c.code, c.created_at, c.used_at, u.email AS used_by
+    FROM invite_codes c LEFT JOIN users u ON u.id = c.used_by
+    ORDER BY c.created_at DESC
+  `).all();
+  res.json(rows);
+});
+
+const INVITE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+app.post("/api/invites", requireAuth, requireAdmin, (_req, res) => {
+  const part = (n) => Array.from(crypto.randomBytes(n), (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join("");
+  const code = `VB-${part(4)}-${part(4)}`;
+  db.prepare("INSERT INTO invite_codes (code) VALUES (?)").run(code);
+  res.status(201).json({ code });
+});
+
+app.delete("/api/invites/:code", requireAuth, requireAdmin, (req, res) => {
+  db.prepare("DELETE FROM invite_codes WHERE code = ? AND used_by IS NULL").run(req.params.code);
   res.json({ ok: true });
 });
 

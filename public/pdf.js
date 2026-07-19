@@ -35,30 +35,30 @@
     return { time, name: CONTENT_W - time - cat - dur, cat, dur };
   }
 
-  // Bild für jsPDF aufbereiten: SVG-Skizzen werden über ein Canvas zu PNG,
-  // Rasterbilder (Upload) direkt verwendet. Liefert {data, format, ratio (h/w)}.
-  function prepareImage(dataUrl) {
+  // Bild für jsPDF aufbereiten. Akzeptiert Data-URLs (geteilte Ansicht) oder
+  // {src, type}-Einträge mit Bild-URLs (App). Alles wird über ein Canvas zu
+  // JPEG normalisiert. Liefert {data, format, ratio (h/w)}.
+  function prepareImage(entry) {
+    const src = typeof entry === "string" ? entry : entry.src;
+    const isSvg = typeof entry === "string" ? src.startsWith("data:image/svg") : entry.type === "svg";
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onerror = reject;
-      if (dataUrl.startsWith("data:image/svg")) {
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        if (isSvg) {
           canvas.width = 540; canvas.height = 1020; // Seitenverhältnis der Feld-Skizze (360×680)
-          const ctx = canvas.getContext("2d");
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve({ data: canvas.toDataURL("image/jpeg", 0.85), format: "JPEG", ratio: canvas.height / canvas.width });
-        };
-      } else {
-        img.onload = () => resolve({
-          data: dataUrl,
-          format: dataUrl.includes("image/png") ? "PNG" : "JPEG",
-          ratio: img.naturalHeight / img.naturalWidth,
-        });
-      }
-      img.src = dataUrl;
+        } else {
+          canvas.width = img.naturalWidth || 540;
+          canvas.height = img.naturalHeight || 540;
+        }
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve({ data: canvas.toDataURL("image/jpeg", 0.85), format: "JPEG", ratio: canvas.height / canvas.width });
+      };
+      img.src = src;
     });
   }
 

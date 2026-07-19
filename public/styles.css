@@ -559,6 +559,16 @@ body.read-only .btn-icon.star { pointer-events: none; opacity: .5; }
 :root[data-theme="dark"] .tag.shared-tag { color: #5eead4; background: rgba(94, 234, 212, .12); }
 .dlg-check { margin-top: 4px; }
 
+/* ═══════════ Teilen-Gültigkeit / Einladungscodes / Konflikt ═══════════ */
+.share-expiry-row {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  font-size: .85rem; font-weight: 600; color: var(--muted);
+}
+.share-expiry-row select { width: auto; }
+.invite-code { font-family: ui-monospace, "SF Mono", Consolas, monospace; letter-spacing: .04em; }
+.invites-list { margin-top: 12px; }
+#btn-invite-create { width: 100%; }
+
 /* ═══════════ Scrollbar (dezent, thematisch) ═══════════ */
 .exercise-list::-webkit-scrollbar { width: 8px; }
 .exercise-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }

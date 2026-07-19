@@ -39,7 +39,12 @@ async function api(method, url, body) {
     showAuthView();
     throw new Error(data.error || "Nicht angemeldet");
   }
-  if (!res.ok) throw new Error(data.error || "Serverfehler (" + res.status + ")");
+  if (!res.ok) {
+    const err = new Error(data.error || "Serverfehler (" + res.status + ")");
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
   return data;
 }
 
@@ -60,10 +65,16 @@ function saveSession(s) {
 
 async function pushSession(s, attempt) {
   try {
-    await api("PUT", "api/sessions/" + s.id, s);
+    const resp = await api("PUT", "api/sessions/" + s.id, s);
+    s.version = resp.version;
     lastFailedSession = null;
     setSaveStatus("saved");
   } catch (e) {
+    if (e.status === 409) {
+      // Jemand anderes hat inzwischen gespeichert → Konfliktdialog statt Retry
+      openConflictDialog(s, e.data);
+      return;
+    }
     if (attempt < 3) {
       setTimeout(() => pushSession(s, attempt + 1), 2000 * 2 ** attempt);
     } else {
@@ -71,6 +82,42 @@ async function pushSession(s, attempt) {
       setSaveStatus("error");
     }
   }
+}
+
+// ═══════════ Bearbeitungskonflikte (Trainerteam) ═══════════
+
+let conflict = null; // { session, serverData }
+
+function openConflictDialog(s, data) {
+  conflict = { session: s, serverData: data.current };
+  setSaveStatus("error");
+  $("#conflict-editor").textContent = data.editor || "einer anderen Person";
+  document.getElementById("dlg-conflict").showModal();
+}
+
+// Serverstand übernehmen (eigene ungespeicherte Änderungen verwerfen)
+function resolveConflictReload() {
+  const { session, serverData } = conflict;
+  const idx = sessions.findIndex((x) => x.id === session.id);
+  if (idx >= 0) sessions[idx] = serverData;
+  conflict = null;
+  document.getElementById("dlg-conflict").close();
+  if (currentId === serverData.id) {
+    fillEditorForm();
+    renderPlan();
+  }
+  if (!$("#view-list").classList.contains("hidden")) renderListView();
+  setSaveStatus("saved");
+}
+
+// Eigene Version durchsetzen (überschreibt den Serverstand)
+function resolveConflictForce() {
+  const { session, serverData } = conflict;
+  session.version = serverData.version; // auf aktuelle Server-Version aufsetzen
+  conflict = null;
+  document.getElementById("dlg-conflict").close();
+  setSaveStatus("saving");
+  pushSession(session, 0);
 }
 
 function setSaveStatus(state) {
@@ -134,6 +181,16 @@ function addMinutes(hhmm, minutes) {
 // Alle Übungen: eingebaute Bibliothek + eigene Übungen
 function allExercises() {
   return [...customExercises, ...EXERCISES];
+}
+
+// Skizzen werden als echte, cachebare Bild-URLs geladen (nicht als Base64-Bulk).
+// exerciseImages enthält nur Metadaten: { exerciseId: { v, type } }.
+function imageUrl(exerciseId) {
+  const meta = exerciseImages[exerciseId];
+  if (!meta) return null;
+  const params = new URLSearchParams({ v: meta.v });
+  if (currentWorkspace) params.set("ws", currentWorkspace);
+  return "api/exercise-images/" + encodeURIComponent(exerciseId) + "?" + params;
 }
 
 // Übungsdaten für ein Plan-Element: live nachschlagen, sonst Schnappschuss aus dem Item
@@ -214,6 +271,7 @@ async function handleAuthSubmit(e) {
 async function enterApp() {
   $("#user-name").textContent = user.name;
   $("#user-box").classList.remove("hidden");
+  $("#btn-invites").classList.toggle("hidden", !user.isAdmin);
   [favorites, workspaces] = await Promise.all([
     api("GET", "api/favorites"),
     api("GET", "api/workspaces"),
@@ -665,6 +723,7 @@ async function createSession(fromTemplate = null) {
     ort: fromTemplate ? fromTemplate.ort || "" : "",
     tags: fromTemplate ? [...(fromTemplate.tags || [])] : [],
     ausgefuehrt: false,
+    version: 0,
     notizen: fromTemplate ? fromTemplate.notizen || "" : "",
     items: fromTemplate
       ? fromTemplate.items.map((it) => ({ ...it, key: uid() }))
@@ -734,6 +793,7 @@ async function duplicateSession(src, { openEditor = true, dateShiftDays = 0, tit
   copy.id = uid();
   delete copy.shareToken;
   copy.ausgefuehrt = false; // Kopien/Serien sind neue, noch nicht ausgeführte Trainings
+  copy.version = 0;
   copy.items.forEach((it) => (it.key = uid()));
   if (dateShiftDays && copy.datum) {
     const d = new Date(copy.datum + "T00:00:00");
@@ -996,7 +1056,7 @@ function renderLibrary() {
   for (const ex of sorted) {
     const isCustom = !ex.fremd && customExercises.some((c) => c.id === ex.id);
     const isFav = favorites.includes(ex.id);
-    const image = exerciseImages[ex.id];
+    const image = imageUrl(ex.id);
     const easier = ex.leichter ? allExercises().find((e) => e.id === ex.leichter) : null;
     const harder = ex.schwerer ? allExercises().find((e) => e.id === ex.schwerer) : null;
     const card = document.createElement("div");
@@ -1034,7 +1094,11 @@ function renderLibrary() {
     card.querySelector(".btn-add").addEventListener("click", () => addExerciseToPlan(ex.id));
     card.querySelector('[data-act="fav"]').addEventListener("click", () => toggleFavorite(ex.id));
     card.querySelector('[data-act="sketch"]')?.addEventListener("click", () => openSketch(ex));
-    card.querySelector('[data-act="sketch-view"]')?.addEventListener("click", () => openSketch(ex));
+    card.querySelector('[data-act="sketch-view"]')?.addEventListener("click", () => {
+      // Skizzen fremder (geteilter) Übungen nur ansehen, nicht bearbeiten
+      if (ex.fremd) window.open(image, "_blank");
+      else openSketch(ex);
+    });
     card.querySelectorAll("[data-variant]").forEach((btn) =>
       btn.addEventListener("click", () => {
         const target = allExercises().find((e) => e.id === btn.dataset.variant);
@@ -1067,15 +1131,34 @@ function renderLibrary() {
 
 // ═══════════ Übungs-Skizzen ═══════════
 
-function openSketch(ex) {
+async function openSketch(ex) {
+  // Bestehende Skizze als Data-URL nachladen, damit der Editor sie öffnen kann
+  let existing = null;
+  const url = imageUrl(ex.id);
+  if (url) {
+    try {
+      const blob = await fetch(url).then((r) => (r.ok ? r.blob() : null));
+      if (blob) {
+        existing = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch { /* ohne Vorlage öffnen */ }
+  }
+
   SketchEditor.open({
     title: "Skizze: " + ex.name,
-    existing: exerciseImages[ex.id] || null,
+    existing,
     onSave: async (dataUrl) => {
       if (!canWrite) return;
       try {
         await api("PUT", "api/exercise-images/" + ex.id, { data: dataUrl });
-        exerciseImages[ex.id] = dataUrl;
+        exerciseImages[ex.id] = {
+          v: String(Date.now()),
+          type: dataUrl.startsWith("data:image/svg") ? "svg" : "raster",
+        };
         renderLibrary();
         toast("Skizze gespeichert.");
       } catch (err) {
@@ -1260,12 +1343,56 @@ async function handleAccountSubmit(e) {
 // ═══════════ Teilen ═══════════
 
 async function openShareDialog() {
+  await refreshShare();
+  document.getElementById("dlg-share").showModal();
+}
+
+async function refreshShare() {
   const s = currentSession();
-  const { token } = await api("POST", "api/sessions/" + s.id + "/share");
+  const days = Number($("#share-expiry").value) || 30;
+  const { token, expires } = await api("POST", "api/sessions/" + s.id + "/share", { days });
   s.shareToken = token;
   const base = new URL(".", location.href).href; // funktioniert auch unter einem Unterpfad
   $("#share-url").value = base + "share/" + token;
-  document.getElementById("dlg-share").showModal();
+  $("#share-expires-text").textContent = expires
+    ? "Link gültig bis " + formatDate(expires.slice(0, 10)) + "."
+    : "";
+}
+
+// ═══════════ Einladungscodes (Admin) ═══════════
+
+async function openInvitesDialog() {
+  await renderInvitesList();
+  document.getElementById("dlg-invites").showModal();
+}
+
+async function renderInvitesList() {
+  const invites = await api("GET", "api/invites");
+  const list = $("#invites-list");
+  list.innerHTML = invites.length ? "" : `<p class="empty-hint">Noch keine Codes erzeugt.</p>`;
+  for (const inv of invites) {
+    const row = document.createElement("div");
+    row.className = "tpl-row";
+    row.innerHTML = `
+      <div class="tpl-pick block-row">
+        <span class="tpl-name invite-code">${esc(inv.code)}</span>
+        <span class="tpl-meta">${inv.used_by
+          ? `verwendet von ${esc(inv.used_by)}`
+          : `offen · erstellt ${esc((inv.created_at || "").slice(0, 10))}`}</span>
+      </div>
+      ${inv.used_by ? "" : `
+        <button class="btn-icon" data-act="copy" title="Code kopieren">📋</button>
+        <button class="btn-icon danger" data-act="del" title="Code löschen">🗑️</button>`}`;
+    row.querySelector('[data-act="copy"]')?.addEventListener("click", () => {
+      navigator.clipboard?.writeText(inv.code);
+      toast("Code kopiert: " + inv.code);
+    });
+    row.querySelector('[data-act="del"]')?.addEventListener("click", async () => {
+      await api("DELETE", "api/invites/" + inv.code);
+      renderInvitesList();
+    });
+    list.appendChild(row);
+  }
 }
 
 // ═══════════ Initialisierung ═══════════
@@ -1339,6 +1466,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderReviewStars();
     }));
 
+  // Bearbeitungskonflikte
+  $("#btn-conflict-reload").addEventListener("click", resolveConflictReload);
+  $("#btn-conflict-force").addEventListener("click", resolveConflictForce);
+
+  // Einladungscodes (Admin)
+  $("#btn-invites").addEventListener("click", openInvitesDialog);
+  $("#btn-invite-create").addEventListener("click", async () => {
+    const { code } = await api("POST", "api/invites");
+    toast("Neuer Einladungscode: " + code);
+    renderInvitesList();
+  });
+  $("#btn-invites-close").addEventListener("click", () => document.getElementById("dlg-invites").close());
+
+  // Teilen: Gültigkeit ändern erneuert den Ablauf
+  $("#share-expiry").addEventListener("change", refreshShare);
+
   // Trainerteam & Konto
   $("#btn-team").addEventListener("click", openTeamDialog);
   $("#team-form").addEventListener("submit", handleTeamInvite);
@@ -1360,7 +1503,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#btn-back").addEventListener("click", showListView);
   $("#btn-template").addEventListener("click", saveAsTemplate);
   $("#btn-duplicate").addEventListener("click", () => duplicateSession(currentSession()));
-  $("#btn-pdf").addEventListener("click", () => generateSessionPdf(currentSession(), resolveExercise, exerciseImages));
+  $("#btn-pdf").addEventListener("click", () => {
+    const imageEntries = Object.fromEntries(
+      Object.entries(exerciseImages).map(([id, meta]) => [id, { src: imageUrl(id), type: meta.type }]));
+    generateSessionPdf(currentSession(), resolveExercise, imageEntries);
+  });
   $("#btn-series").addEventListener("click", () => document.getElementById("dlg-series").showModal());
   $("#btn-share").addEventListener("click", openShareDialog);
   $("#save-status").addEventListener("click", () => {

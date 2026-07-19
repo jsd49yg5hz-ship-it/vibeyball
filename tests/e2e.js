@@ -63,6 +63,18 @@ async function run() {
   }
   check("Rate-Limiting: 11. Fehlversuch liefert 429", last.status === 429);
 
+  // ── Security-Header ──
+  const headersRes = await fetch(BASE + "/");
+  check("Security-Header gesetzt (CSP, X-Frame-Options)",
+    (headersRes.headers.get("content-security-policy") || "").includes("script-src 'self'") &&
+    headersRes.headers.get("x-frame-options") === "DENY");
+
+  // ── Rate-Limiting überlebt in der Datenbank ──
+  const attemptsDb = new Database(path.join(DATA_DIR, "vibeyball.db"));
+  const attemptRows = attemptsDb.prepare("SELECT COUNT(*) AS n FROM login_attempts").get();
+  attemptsDb.close();
+  check("Fehlversuche persistent in SQLite", attemptRows.n >= 1);
+
   browser = await chromium.launch();
   const ctx = await browser.newContext({
     acceptDownloads: true,
@@ -281,18 +293,73 @@ async function run() {
   const objectCount = await page.locator("#sketch-canvas [data-idx]").count();
   check("Skizze ist wieder editierbar (3 Objekte)", objectCount === 3);
   await page.click("#btn-sketch-cancel");
+  // Skizzen kommen als cachebare Bild-URLs, nicht als Base64-Bulk
+  const thumbSrc = await page.locator(".exercise-card .ex-thumb").first().getAttribute("src");
+  check("Skizze wird als URL geladen (nicht Base64)", thumbSrc.startsWith("api/exercise-images/"));
+  const imgResponse = await page.evaluate((src) => fetch(src).then((r) => ({
+    status: r.status, type: r.headers.get("content-type"), cache: r.headers.get("cache-control"),
+  })), thumbSrc);
+  check("Bild-Endpunkt liefert SVG mit Cache-Header",
+    imgResponse.status === 200 && imgResponse.type.includes("svg") && imgResponse.cache.includes("immutable"));
+
   // PDF mit Skizze
   await page.fill("#f-search", "");
   const [pdfImg] = await Promise.all([page.waitForEvent("download"), page.click("#btn-pdf")]);
   check("PDF mit Skizze generiert", (pdfImg.suggestedFilename() || "").endsWith(".pdf"));
 
-  // ── Punkt 5: Übung mit allen Coaches teilen ──
+  // ── Bearbeitungskonflikt: zweiter Schreiber ändert dieselbe Session ──
+  const conflictInfo = await page.evaluate(async () => {
+    const s = sessions.find((x) => x.id === currentId);
+    const copy = JSON.parse(JSON.stringify(s));
+    copy.titel = "Konkurrenz-Titel";
+    const res = await fetch("api/sessions/" + s.id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(copy),
+    });
+    return res.status;
+  });
+  check("Fremder Schreibzugriff angenommen (Version erhöht)", conflictInfo === 200);
+  await page.fill("#f-title", "Testtraining geändert");
+  await page.waitForSelector("#dlg-conflict[open]", { timeout: 8000 });
+  check("Konfliktdialog erscheint beim veralteten Speichern", true);
+  await page.click("#btn-conflict-reload");
+  await page.locator("#dlg-conflict[open]").waitFor({ state: "hidden" });
+  check("«Deren Stand übernehmen» lädt den Serverstand", (await page.inputValue("#f-title")) === "Konkurrenz-Titel");
+  // Danach speichert die Session wieder normal (Version ist aktuell)
+  await page.fill("#f-title", "Testtraining");
+  await page.waitForSelector(".save-status.saved", { timeout: 8000 });
+  check("Speichern nach Konfliktauflösung funktioniert", true);
+
+  // ── Teilen-Link mit Ablaufdatum ──
+  await page.click("#btn-share");
+  await page.waitForSelector("#dlg-share[open]");
+  check("Teilen-Dialog zeigt Gültigkeitsdatum", ((await page.textContent("#share-expires-text")) || "").includes("gültig bis"));
+  const shareUrl2 = await page.inputValue("#share-url");
+  const shareToken2 = shareUrl2.split("/").pop();
+  await page.click("#btn-share-close");
+  const dbExpire = new Database(path.join(DATA_DIR, "vibeyball.db"));
+  dbExpire.prepare("UPDATE sessions SET share_expires = '2000-01-01 00:00:00' WHERE share_token = ?").run(shareToken2);
+  dbExpire.close();
+  const expiredRes = await fetch(BASE + "/api/shared/" + shareToken2);
+  check("Abgelaufener Teilen-Link liefert 410", expiredRes.status === 410);
+
+  // ── Punkt 5: Übung mit allen Coaches teilen (inkl. Skizze) ──
   await page.click("#btn-new-exercise");
   await page.fill("#ex-name", "Geteilter Drill");
   await page.fill("#ex-desc", "Für alle Coaches sichtbar.");
   await page.check("#ex-public");
   await page.click('#exercise-form button[type="submit"]');
   await page.waitForTimeout(400);
+  // Skizze an die geteilte Übung hängen
+  await page.fill("#f-search", "Geteilter Drill");
+  await page.locator('.exercise-card [data-act="sketch"]').first().click();
+  await page.waitForSelector("#dlg-sketch[open]");
+  await page.locator('#sketch-tools [data-tool="p"]').click();
+  await page.locator("#sketch-canvas").click({ position: { x: 120, y: 200 } });
+  await page.click("#btn-sketch-save");
+  await page.locator(".toast", { hasText: "Skizze gespeichert" }).waitFor();
+  await page.fill("#f-search", "");
 
   // ── Punkt 9: Trainerteam (zweiter Coach, Rolle Lesen) ──
   const invite2 = createInviteCode();
@@ -312,8 +379,10 @@ async function run() {
   await pageB.click("#btn-new-session");
   await pageB.waitForSelector("#view-editor:not(.hidden)");
   await pageB.fill("#f-search", "Geteilter Drill");
-  const sharedTag = (await pageB.locator(".exercise-card", { hasText: "Geteilter Drill" }).textContent()) || "";
+  const sharedCard = pageB.locator(".exercise-card", { hasText: "Geteilter Drill" });
+  const sharedTag = (await sharedCard.textContent()) || "";
   check("Geteilte Übung bei anderem Coach sichtbar", sharedTag.includes("geteilt von Coach Test"));
+  check("Skizze der geteilten Übung sichtbar", (await sharedCard.locator(".ex-thumb").count()) === 1);
   await pageB.click("#btn-back");
 
   // A lädt B mit Rolle «Lesen» ein
@@ -376,6 +445,19 @@ async function run() {
     body: JSON.stringify({ email: "berta@example.ch", password: "cliPasswort1" }),
   });
   check("Login mit CLI-Passwort funktioniert", cliLogin.status === 200);
+
+  // ── Einladungscodes: Admin-UI (erster Benutzer ist Admin) ──
+  check("Admin sieht Einladungscode-Knopf", await page.locator("#btn-invites").isVisible());
+  check("Nicht-Admin sieht Knopf nicht", !(await pageB.locator("#btn-invites").isVisible()));
+  await page.click("#btn-invites");
+  await page.waitForSelector("#dlg-invites[open]");
+  await page.click("#btn-invite-create");
+  await page.locator(".toast", { hasText: "Neuer Einladungscode" }).waitFor();
+  const inviteRows = await page.locator("#invites-list .tpl-row").count();
+  check("Neuer Code erscheint in der Liste", inviteRows >= 1);
+  const usedRow = (await page.locator("#invites-list").textContent()) || "";
+  check("Verwendete Codes zeigen Benutzer", usedRow.includes("coach@example.ch"));
+  await page.click("#btn-invites-close");
 
   // ── Punkt 12: Backup-Import stellt gelöschte Session wieder her ──
   const [backup2] = await Promise.all([page.waitForEvent("download"), page.click("#btn-backup")]);

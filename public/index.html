@@ -6,11 +6,7 @@
   <title>VibeyBall – Volleyball-Trainingsplaner</title>
   <meta name="theme-color" content="#16203c">
   <link rel="manifest" href="manifest.webmanifest">
-  <script>
-    // Theme vor dem Rendern setzen (gespeicherte Wahl oder Systemeinstellung)
-    document.documentElement.dataset.theme = localStorage.getItem("vb-theme") ||
-      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  </script>
+  <script src="theme-init.js"></script>
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ea580c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 12a13.3 13.3 0 0 0 0-10'/%3E%3Cpath d='M12 12a13.3 13.3 0 0 0-8.66 5'/%3E%3Cpath d='M12 12a13.3 13.3 0 0 0 8.66 5'/%3E%3Cpath d='M11.26 6.99a16.4 16.4 0 0 1 10.6 3.74'/%3E%3Cpath d='M6.32 3.7a16.4 16.4 0 0 1 1.94 11.06'/%3E%3Cpath d='M18.34 17.66a16.4 16.4 0 0 1-12.5-1.42'/%3E%3C/svg%3E">
 </head>
@@ -32,6 +28,7 @@
       <button class="btn btn-header btn-theme" id="btn-theme" title="Hell/Dunkel umschalten">🌙</button>
       <div id="user-box" class="user-box hidden">
         <select id="workspace-select" class="workspace-select hidden" title="Trainerteam wechseln"></select>
+        <button class="btn btn-header hidden" id="btn-invites" title="Einladungscodes verwalten">🎟️</button>
         <button class="btn btn-header" id="btn-team" title="Trainerteam verwalten">👥</button>
         <button class="btn btn-header" id="btn-account" title="Konto / Passwort ändern"><span id="user-name"></span></button>
         <button class="btn btn-header" id="btn-logout">Abmelden</button>
@@ -415,9 +412,39 @@
       <input type="text" id="share-url" readonly>
       <button class="btn btn-primary" id="btn-copy-share">Kopieren</button>
     </div>
+    <label class="share-expiry-row">Gültigkeit
+      <select id="share-expiry">
+        <option value="7">7 Tage</option>
+        <option value="30" selected>30 Tage</option>
+        <option value="365">1 Jahr</option>
+      </select>
+    </label>
+    <p class="dlg-hint" id="share-expires-text"></p>
     <div class="dlg-actions">
       <button class="btn" id="btn-unshare">Teilen beenden</button>
       <button class="btn" id="btn-share-close">Schliessen</button>
+    </div>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Bearbeitungskonflikt ═══════════ -->
+  <dialog id="dlg-conflict">
+    <h3>Bearbeitungskonflikt</h3>
+    <p class="dlg-hint">Diese Session wurde inzwischen von <strong id="conflict-editor"></strong> geändert.
+      Du kannst deren Stand übernehmen (deine letzte Änderung geht verloren) oder deine Version durchsetzen.</p>
+    <div class="dlg-actions">
+      <button class="btn" id="btn-conflict-force">Meine Version durchsetzen</button>
+      <button class="btn btn-primary" id="btn-conflict-reload">Deren Stand übernehmen</button>
+    </div>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Einladungscodes (Admin) ═══════════ -->
+  <dialog id="dlg-invites">
+    <h3>Einladungscodes</h3>
+    <p class="dlg-hint">Jeder Code erlaubt genau eine Registrierung.</p>
+    <button class="btn btn-primary" id="btn-invite-create">+ Neuen Code erzeugen</button>
+    <div id="invites-list" class="tpl-list invites-list"></div>
+    <div class="dlg-actions">
+      <button class="btn" id="btn-invites-close">Schliessen</button>
     </div>
   </dialog>
 

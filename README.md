@@ -36,7 +36,9 @@ gestaltetes PDF exportieren. Mit Login und zentraler Speicherung auf dem eigenen
 - **Übungen teilen**: eigene Übungen für alle Coaches auf der Instanz freigeben.
 - **Trainerteam**: Co-Trainer per E-Mail einladen (Rolle «Lesen» oder «Bearbeiten») –
   sie sehen bzw. bearbeiten alle Sessions, Vorlagen und Übungen des Teams über den
-  Team-Umschalter im Header.
+  Team-Umschalter im Header. Bearbeiten zwei Coaches dieselbe Session, erkennt die App
+  den Konflikt (optimistische Sperre) und lässt wählen: fremden Stand übernehmen oder
+  die eigene Version durchsetzen.
 - **PWA**: als App installierbar; statische Dateien und zuletzt geladene Pläne sind
   dank Service Worker auch offline abrufbar.
 - **Backup & Import**: alle eigenen Daten (Sessions, Übungen, Vorlagen, Blöcke, Skizzen)
@@ -55,7 +57,7 @@ gestaltetes PDF exportieren. Mit Login und zentraler Speicherung auf dem eigenen
   klare Typografie mit dezenten Farbakzenten, Zeitspalte, mehrseitiger Umbruch.
 - **Duplizieren & Serien**: Session kopieren oder als wöchentliche Serie wiederholen.
 - **Teilen**: Read-only-Link pro Session für Co-Trainer oder das Team (inkl. PDF-Download),
-  jederzeit widerrufbar.
+  mit wählbarer Gültigkeit (7 Tage / 30 Tage / 1 Jahr) und jederzeit widerrufbar.
 
 ## Lokal starten
 
@@ -74,8 +76,11 @@ npm run invite -- 5     # fünf Codes auf einmal
 npm run invite -- list  # alle Codes und ihren Status anzeigen
 ```
 
-Jeder Code ist einmal verwendbar. Login und Registrierung sind mit Rate-Limiting
-geschützt (10 Fehlversuche pro 15 Minuten).
+Jeder Code ist einmal verwendbar. Der **erste registrierte Benutzer ist Administrator**
+und kann Einladungscodes auch direkt in der App verwalten (🎟️-Knopf im Header).
+Login und Registrierung sind mit Rate-Limiting geschützt (10 Fehlversuche pro
+15 Minuten, persistent über Neustarts). Der Server setzt Security-Header inklusive
+einer Content-Security-Policy ohne Inline-Skripte.
 
 ## Tests
 
