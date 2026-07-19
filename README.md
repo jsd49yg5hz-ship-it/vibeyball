@@ -21,7 +21,28 @@ gestaltetes PDF exportieren. Mit Login und zentraler Speicherung auf dem eigenen
 - **Session-Vorlagen**: Struktur einer Session als Vorlage speichern und neue Sessions
   daraus erstellen.
 - **Übungs-Favoriten**: Übungen mit ★ markieren – Favoriten stehen in der Bibliothek zuoberst.
-- **Backup**: alle eigenen Daten (Sessions, Übungen, Vorlagen) als JSON-Datei herunterladen.
+- **Übungs-Skizzen**: pro Übung eine Feldskizze im eingebauten Zeichen-Editor erstellen
+  (Spieler, Gegner, Ball, Hütchen, Laufwege als Pfeile) oder ein Bild hochladen –
+  sichtbar in Bibliothek, geteilter Ansicht und PDF.
+- **Nachbereitung**: beim Ausführen Bewertung (1–5 ★), Anwesenheit (z. B. 9/12) und eine
+  «Beim nächsten Mal»-Notiz erfassen.
+- **Matchtage**: Spiele mit Gegner, Resultat und Notizen erfassen – erscheinen in der
+  Trainingsliste mit eigener Kennzeichnung.
+- **Saisonblöcke**: Zeiträume mit Blockziel definieren («Saisonvorbereitung» etc.);
+  Trainings werden über ihr Datum automatisch zugeordnet, die Statistik ist pro Block filterbar.
+- **Übungsvarianten**: Übungen sind als Progressionen verkettet (leichter ⇄ schwerer) –
+  im Trainingsablauf mit einem Klick die passende Stufe einsetzen; eigene Übungen können
+  ebenfalls verkettet werden.
+- **Übungen teilen**: eigene Übungen für alle Coaches auf der Instanz freigeben.
+- **Trainerteam**: Co-Trainer per E-Mail einladen (Rolle «Lesen» oder «Bearbeiten») –
+  sie sehen bzw. bearbeiten alle Sessions, Vorlagen und Übungen des Teams über den
+  Team-Umschalter im Header.
+- **PWA**: als App installierbar; statische Dateien und zuletzt geladene Pläne sind
+  dank Service Worker auch offline abrufbar.
+- **Backup & Import**: alle eigenen Daten (Sessions, Übungen, Vorlagen, Blöcke, Skizzen)
+  als JSON-Datei sichern und wiederherstellen.
+- **Passwort**: eingeloggt über das Konto-Menü änderbar; bei Vergessen per CLI:
+  `npm run reset-password -- coach@verein.ch`.
 - **Übungsbibliothek**: 60+ eingebaute Übungen für Indoor-6er-Volleyball (Aufwärmen bis
   Cool-down) mit Volltextsuche und Filtern nach Kategorie und Niveau.
 - **Eigene Übungen**: erstellen, bearbeiten, löschen – inklusive eigener Kategorien.

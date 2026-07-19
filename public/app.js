@@ -7,20 +7,31 @@ let user = null;
 let sessions = [];
 let customExercises = [];
 let templates = [];
+let blocks = [];           // Saisonblöcke {id, name, von, bis, ziel}
+let exerciseImages = {};   // exerciseId → Bild-Data-URL
 let favorites = [];        // IDs der favorisierten Übungen
+let workspaces = [];       // Trainerteams, in die man eingeladen wurde
+let currentWorkspace = null; // null = eigener Datenbestand, sonst Owner-ID
+let canWrite = true;       // Schreibrecht im aktuellen Workspace
 let currentId = null;      // ID der Session im Editor
 let editingExerciseId = null; // ID der eigenen Übung im Bearbeiten-Dialog
+let editingMatchId = null; // ID des Matchs im Bearbeiten-Dialog
+let reviewSessionId = null; // Session, die gerade nachbereitet wird
+let reviewRating = 0;
 let listTab = "sessions";  // aktiver Reiter der Übersicht: "sessions" | "stats"
 let statsPeriod = "all";   // Statistik-Filter: "4w" | "3m" | "all"
 let statsMetric = "count"; // "count" | "minutes"
 let statsTeam = "";        // "" = alle Mannschaften
+let statsBlock = "";       // "" = kein Blockfilter
 
 // ═══════════ API ═══════════
 
 async function api(method, url, body) {
+  const headers = body ? { "Content-Type": "application/json" } : {};
+  if (currentWorkspace) headers["X-Workspace"] = currentWorkspace;
   const res = await fetch(url, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -203,12 +214,48 @@ async function handleAuthSubmit(e) {
 async function enterApp() {
   $("#user-name").textContent = user.name;
   $("#user-box").classList.remove("hidden");
-  [sessions, customExercises, templates, favorites] = await Promise.all([
+  [favorites, workspaces] = await Promise.all([
+    api("GET", "api/favorites"),
+    api("GET", "api/workspaces"),
+  ]);
+  renderWorkspaceSelect();
+  await loadWorkspaceData();
+  showListView();
+}
+
+// Daten des aktuell gewählten Workspaces (eigener oder Trainerteam) laden
+async function loadWorkspaceData() {
+  [sessions, customExercises, templates, blocks, exerciseImages] = await Promise.all([
     api("GET", "api/sessions"),
     api("GET", "api/exercises"),
     api("GET", "api/templates"),
-    api("GET", "api/favorites"),
+    api("GET", "api/blocks"),
+    api("GET", "api/exercise-images"),
   ]);
+  applyPermissions();
+}
+
+// ═══════════ Trainerteam / Workspaces ═══════════
+
+function renderWorkspaceSelect() {
+  const select = $("#workspace-select");
+  select.classList.toggle("hidden", workspaces.length === 0);
+  select.innerHTML =
+    `<option value="">Meine Trainings</option>` +
+    workspaces.map((w) =>
+      `<option value="${w.id}">Team von ${esc(w.name)} (${w.role === "edit" ? "Bearbeiten" : "Lesen"})</option>`).join("");
+  select.value = currentWorkspace || "";
+}
+
+function applyPermissions() {
+  const ws = workspaces.find((w) => w.id === currentWorkspace);
+  canWrite = !currentWorkspace || ws?.role === "edit";
+  document.body.classList.toggle("read-only", !canWrite);
+}
+
+async function switchWorkspace(value) {
+  currentWorkspace = value ? Number(value) : null;
+  await loadWorkspaceData();
   showListView();
 }
 
@@ -234,15 +281,33 @@ function renderListView() {
   if (listTab === "sessions") renderSessionList(); else renderStats();
 }
 
+function blockForDate(datum) {
+  if (!datum) return null;
+  return blocks.find((b) => b.von && b.bis && datum >= b.von && datum <= b.bis) || null;
+}
+
+function reviewSummary(s) {
+  const parts = [];
+  if (s.bewertung) parts.push("★".repeat(s.bewertung) + "☆".repeat(5 - s.bewertung));
+  if (s.anwesend != null && s.anwesend !== "") {
+    parts.push(s.anwesend + (s.spielerTotal ? "/" + s.spielerTotal : "") + " anwesend");
+  }
+  if (s.nachnotiz) parts.push("«" + s.nachnotiz + "»");
+  return parts.join(" · ");
+}
+
 function renderSessionList() {
   const list = $("#session-list");
   list.innerHTML = "";
 
   const sorted = [...sessions].sort((a, b) => (b.datum || "").localeCompare(a.datum || ""));
   for (const s of sorted) {
+    if (s.typ === "match") { list.appendChild(matchCard(s)); continue; }
     const card = document.createElement("div");
     card.className = "session-card" + (s.ausgefuehrt ? " is-done" : "");
     const tags = s.tags || [];
+    const block = blockForDate(s.datum);
+    const review = s.ausgefuehrt ? reviewSummary(s) : "";
     card.innerHTML = `
       <h3>${esc(s.titel) || "Ohne Titel"}</h3>
       <div class="meta">
@@ -250,13 +315,17 @@ function renderSessionList() {
         ${s.datum ? " · " + formatDate(s.datum) : ""}${s.uhrzeit ? ", " + esc(s.uhrzeit) : ""}
         ${s.ort ? " · " + esc(s.ort) : ""}
       </div>
-      ${tags.length ? `<div class="ex-tags">${tags.map((t) => `<span class="tag cat">${esc(t)}</span>`).join("")}</div>` : ""}
+      ${tags.length || block ? `<div class="ex-tags">
+        ${block ? `<span class="tag block-tag" title="Saisonblock">📅 ${esc(block.name)}</span>` : ""}
+        ${tags.map((t) => `<span class="tag cat">${esc(t)}</span>`).join("")}
+      </div>` : ""}
+      ${review ? `<div class="review-line">${esc(review)}</div>` : ""}
       <div class="card-footer">
         <span>
           <span class="badge">${s.items.length} Übungen · ${totalDuration(s)} min</span>
           ${s.ausgefuehrt ? `<span class="badge done">✓ Ausgeführt</span>` : ""}
         </span>
-        <span>
+        <span class="write-only">
           <button class="btn-icon done-toggle ${s.ausgefuehrt ? "is-done" : ""}" data-act="done"
             title="${s.ausgefuehrt ? "Als nicht ausgeführt markieren" : "Als ausgeführt markieren"}">✓</button>
           <button class="btn-icon" data-act="dup" title="Duplizieren">📋</button>
@@ -269,6 +338,7 @@ function renderSessionList() {
       s.ausgefuehrt = !s.ausgefuehrt;
       saveSession(s);
       renderListView();
+      if (s.ausgefuehrt) openReviewDialog(s); // direkt nachbereiten
     });
     card.querySelector('[data-act="dup"]').addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -292,6 +362,114 @@ function renderSessionList() {
   }
 }
 
+// ═══════════ Matchtage ═══════════
+
+function matchCard(m) {
+  const card = document.createElement("div");
+  card.className = "session-card match-card";
+  card.innerHTML = `
+    <h3>🏆 ${esc(m.gegner) || "Match"}</h3>
+    <div class="meta">
+      ${esc(m.team) || "Keine Mannschaft"}
+      ${m.datum ? " · " + formatDate(m.datum) : ""}${m.uhrzeit ? ", " + esc(m.uhrzeit) : ""}
+      ${m.ort ? " · " + esc(m.ort) : ""}
+    </div>
+    ${m.notizen ? `<div class="review-line">${esc(m.notizen)}</div>` : ""}
+    <div class="card-footer">
+      <span>
+        <span class="badge match-badge">Matchtag${m.resultat ? " · " + esc(m.resultat) : ""}</span>
+      </span>
+      <span class="write-only">
+        <button class="btn-icon danger" data-act="del" title="Match löschen">🗑️</button>
+      </span>
+    </div>`;
+  card.addEventListener("click", () => openMatchDialog(m));
+  card.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
+    e.stopPropagation();
+    await api("DELETE", "api/sessions/" + m.id);
+    sessions = sessions.filter((x) => x.id !== m.id);
+    renderListView();
+    toast(`Match gegen «${m.gegner || "?"}» gelöscht.`, {
+      undo: async () => {
+        await api("POST", "api/sessions", m);
+        sessions.push(m);
+        renderListView();
+      },
+    });
+  });
+  return card;
+}
+
+function openMatchDialog(m = null) {
+  editingMatchId = m ? m.id : null;
+  $("#dlg-match-title").textContent = m ? "Matchtag bearbeiten" : "Matchtag erfassen";
+  $("#match-opponent").value = m?.gegner || "";
+  $("#match-date").value = m?.datum || new Date().toISOString().slice(0, 10);
+  $("#match-time").value = m?.uhrzeit || "";
+  $("#match-location").value = m?.ort || "";
+  $("#match-result").value = m?.resultat || "";
+  $("#match-team").value = m?.team || "";
+  $("#match-notes").value = m?.notizen || "";
+  document.getElementById("dlg-match").showModal();
+}
+
+async function handleMatchSubmit(e) {
+  e.preventDefault();
+  const data = {
+    typ: "match",
+    gegner: $("#match-opponent").value.trim(),
+    datum: $("#match-date").value,
+    uhrzeit: $("#match-time").value,
+    ort: $("#match-location").value.trim(),
+    resultat: $("#match-result").value.trim(),
+    team: $("#match-team").value.trim(),
+    notizen: $("#match-notes").value.trim(),
+  };
+  if (!data.gegner) return;
+  if (editingMatchId) {
+    const m = sessions.find((x) => x.id === editingMatchId);
+    Object.assign(m, data);
+    await api("PUT", "api/sessions/" + m.id, m);
+  } else {
+    const m = { id: uid(), titel: "", tags: [], ausgefuehrt: false, items: [], ...data };
+    await api("POST", "api/sessions", m);
+    sessions.push(m);
+  }
+  document.getElementById("dlg-match").close();
+  renderListView();
+}
+
+// ═══════════ Nachbereitung ═══════════
+
+function openReviewDialog(s) {
+  reviewSessionId = s.id;
+  reviewRating = s.bewertung || 0;
+  renderReviewStars();
+  $("#review-present").value = s.anwesend ?? "";
+  $("#review-total").value = s.spielerTotal ?? "";
+  $("#review-note").value = s.nachnotiz || "";
+  document.getElementById("dlg-review").showModal();
+}
+
+function renderReviewStars() {
+  document.querySelectorAll("#review-stars button").forEach((btn) =>
+    btn.classList.toggle("active", Number(btn.dataset.v) <= reviewRating));
+}
+
+function handleReviewSubmit(e) {
+  e.preventDefault();
+  const s = sessions.find((x) => x.id === reviewSessionId);
+  if (!s) return;
+  s.bewertung = reviewRating || null;
+  s.anwesend = $("#review-present").value === "" ? null : Number($("#review-present").value);
+  s.spielerTotal = $("#review-total").value === "" ? null : Number($("#review-total").value);
+  s.nachnotiz = $("#review-note").value.trim();
+  saveSession(s);
+  document.getElementById("dlg-review").close();
+  if (currentId === s.id) fillEditorForm();
+  if (!$("#view-list").classList.contains("hidden")) renderListView();
+}
+
 // ═══════════ Statistik (Spider Chart der Fokus-Tags) ═══════════
 
 function statsCutoffIso() {
@@ -306,10 +484,14 @@ function renderStats() {
   const panel = $("#stats-panel");
   const cutoff = statsCutoffIso();
   const teams = [...new Set(sessions.map((s) => (s.team || "").trim()).filter(Boolean))].sort();
+  const activeBlock = blocks.find((b) => b.id === statsBlock);
 
   const done = sessions.filter((s) =>
+    s.typ !== "match" &&
     s.ausgefuehrt &&
-    (!cutoff || (s.datum && s.datum >= cutoff)) &&
+    (activeBlock
+      ? (s.datum && s.datum >= activeBlock.von && s.datum <= activeBlock.bis)
+      : (!cutoff || (s.datum && s.datum >= cutoff))) &&
     (!statsTeam || (s.team || "").trim() === statsTeam));
 
   const values = FOCUS_TAGS.map((tag) => {
@@ -336,7 +518,13 @@ function renderStats() {
           <option value="">Alle Mannschaften</option>
           ${teams.map((t) => `<option value="${esc(t)}" ${t === statsTeam ? "selected" : ""}>${esc(t)}</option>`).join("")}
         </select>` : ""}
-    </div>`;
+      ${blocks.length ? `
+        <select id="stats-block" title="Saisonblock (überschreibt den Zeitraum)">
+          <option value="">Kein Blockfilter</option>
+          ${blocks.map((b) => `<option value="${esc(b.id)}" ${b.id === statsBlock ? "selected" : ""}>📅 ${esc(b.name)}</option>`).join("")}
+        </select>` : ""}
+    </div>
+    ${activeBlock?.ziel ? `<p class="stats-sub">Blockziel: ${esc(activeBlock.ziel)}</p>` : ""}`;
 
   const contentHtml = done.length
     ? `
@@ -366,6 +554,53 @@ function renderStats() {
     statsTeam = e.target.value;
     renderStats();
   });
+  document.getElementById("stats-block")?.addEventListener("change", (e) => {
+    statsBlock = e.target.value;
+    renderStats();
+  });
+}
+
+// ═══════════ Saisonblöcke ═══════════
+
+function renderBlocksDialog() {
+  const list = $("#blocks-list");
+  list.innerHTML = blocks.length ? "" : `<p class="empty-hint">Noch keine Blöcke angelegt.</p>`;
+  for (const b of [...blocks].sort((x, y) => (x.von || "").localeCompare(y.von || ""))) {
+    const row = document.createElement("div");
+    row.className = "tpl-row";
+    row.innerHTML = `
+      <div class="tpl-pick block-row">
+        <span class="tpl-name">📅 ${esc(b.name)}</span>
+        <span class="tpl-meta">${formatDate(b.von)} – ${formatDate(b.bis)}${b.ziel ? " · Ziel: " + esc(b.ziel) : ""}</span>
+      </div>
+      <button class="btn-icon danger write-only" title="Block löschen">🗑️</button>`;
+    row.querySelector(".btn-icon").addEventListener("click", async () => {
+      await api("DELETE", "api/blocks/" + b.id);
+      blocks = blocks.filter((x) => x.id !== b.id);
+      renderBlocksDialog();
+      toast(`Block «${b.name}» gelöscht.`, {
+        undo: async () => { await api("POST", "api/blocks", b); blocks.push(b); },
+      });
+    });
+    list.appendChild(row);
+  }
+}
+
+async function handleBlockSubmit(e) {
+  e.preventDefault();
+  const block = {
+    id: "blk_" + uid(),
+    name: $("#block-name").value.trim(),
+    von: $("#block-from").value,
+    bis: $("#block-to").value,
+    ziel: $("#block-goal").value.trim(),
+  };
+  if (!block.name || !block.von || !block.bis) return;
+  if (block.bis < block.von) { toast("«Bis» liegt vor «Von» – bitte korrigieren."); return; }
+  await api("POST", "api/blocks", block);
+  blocks.push(block);
+  $("#block-form").reset();
+  renderBlocksDialog();
 }
 
 // Ringbeschriftungen «schön» runden: ganze Zahlen bei Anzahlen, Zwanzigerschritte bei Minuten
@@ -540,6 +775,9 @@ function fillEditorForm() {
   document.querySelectorAll("#f-tags input").forEach((cb) => {
     cb.checked = (s.tags || []).includes(cb.value);
   });
+  const summary = s.ausgefuehrt ? reviewSummary(s) : "";
+  $("#review-box").classList.toggle("hidden", !s.ausgefuehrt);
+  $("#review-text").textContent = summary || "Noch keine Nachbereitung erfasst.";
 }
 
 function bindEditorForm() {
@@ -558,6 +796,8 @@ function bindEditorForm() {
     if (!s) return;
     s.ausgefuehrt = e.target.checked;
     saveSession(s);
+    fillEditorForm();
+    if (s.ausgefuehrt) openReviewDialog(s);
   });
 
   // Fokus-Tag-Chips einmalig aufbauen
@@ -602,6 +842,10 @@ function renderPlan() {
         <span class="cat">${esc(ex.kategorie)}</span>
       </span>
       <span class="item-actions">
+        ${ex.leichter && allExercises().some((e) => e.id === ex.leichter)
+          ? `<button class="btn-icon" data-act="easier" title="Leichtere Variante einsetzen">⤓</button>` : ""}
+        ${ex.schwerer && allExercises().some((e) => e.id === ex.schwerer)
+          ? `<button class="btn-icon" data-act="harder" title="Schwerere Variante einsetzen">⤒</button>` : ""}
         <input type="number" class="duration-input" min="1" max="180" value="${item.dauer}">
         <span class="unit">min</span>
         <button class="btn-icon" data-act="up" title="Nach oben">↑</button>
@@ -627,6 +871,16 @@ function renderPlan() {
         if (act === "remove") s.items.splice(i, 1);
         if (act === "up" && i > 0) [s.items[i - 1], s.items[i]] = [s.items[i], s.items[i - 1]];
         if (act === "down" && i < s.items.length - 1) [s.items[i + 1], s.items[i]] = [s.items[i], s.items[i + 1]];
+        if (act === "easier" || act === "harder") {
+          const target = allExercises().find((e) => e.id === (act === "easier" ? ex.leichter : ex.schwerer));
+          if (target) {
+            // Übung austauschen, Dauer und Notiz behalten
+            Object.assign(item, {
+              exerciseId: target.id, name: target.name,
+              kategorie: target.kategorie, beschreibung: target.beschreibung,
+            });
+          }
+        }
         saveSession(s);
         renderPlan();
       });
@@ -740,8 +994,11 @@ function renderLibrary() {
     (favorites.includes(b.id) ? 1 : 0) - (favorites.includes(a.id) ? 1 : 0));
 
   for (const ex of sorted) {
-    const isCustom = customExercises.some((c) => c.id === ex.id);
+    const isCustom = !ex.fremd && customExercises.some((c) => c.id === ex.id);
     const isFav = favorites.includes(ex.id);
+    const image = exerciseImages[ex.id];
+    const easier = ex.leichter ? allExercises().find((e) => e.id === ex.leichter) : null;
+    const harder = ex.schwerer ? allExercises().find((e) => e.id === ex.schwerer) : null;
     const card = document.createElement("div");
     card.className = "exercise-card" + (isCustom ? " custom" : "");
     card.innerHTML = `
@@ -750,10 +1007,12 @@ function renderLibrary() {
         <span class="ex-head-actions">
           <button class="btn-icon star ${isFav ? "is-fav" : ""}" data-act="fav"
             title="${isFav ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen"}">${isFav ? "★" : "☆"}</button>
+          ${!ex.fremd ? `<button class="btn-icon ${canWrite || image ? "" : "hidden"}" data-act="sketch"
+            title="${image ? "Skizze ansehen/bearbeiten" : "Skizze erstellen"}">🖼️</button>` : ""}
           ${isCustom ? `
-            <button class="btn-icon" data-act="edit" title="Bearbeiten">✏️</button>
-            <button class="btn-icon danger" data-act="delete" title="Löschen">🗑️</button>` : ""}
-          <button class="btn-add">+ Hinzufügen</button>
+            <button class="btn-icon write-only" data-act="edit" title="Bearbeiten">✏️</button>
+            <button class="btn-icon danger write-only" data-act="delete" title="Löschen">🗑️</button>` : ""}
+          <button class="btn-add write-only">+ Hinzufügen</button>
         </span>
       </div>
       <div class="ex-tags">
@@ -762,10 +1021,29 @@ function renderLibrary() {
         <span class="tag">ab ${ex.spieler} Sp.</span>
         <span class="tag">~${ex.dauer} min</span>
         ${isCustom ? `<span class="tag own">Eigene Übung</span>` : ""}
+        ${ex.fremd ? `<span class="tag shared-tag">geteilt von ${esc(ex.autor || "?")}</span>` : ""}
       </div>
-      <div class="ex-desc">${esc(ex.beschreibung)}</div>`;
+      <div class="ex-body">
+        ${image ? `<img class="ex-thumb" src="${image}" alt="Skizze" data-act="sketch-view">` : ""}
+        <div class="ex-desc">${esc(ex.beschreibung)}</div>
+      </div>
+      ${easier || harder ? `<div class="ex-variants">
+        ${easier ? `<button class="variant-link" data-variant="${esc(easier.id)}">⬇ Leichter: ${esc(easier.name)}</button>` : ""}
+        ${harder ? `<button class="variant-link" data-variant="${esc(harder.id)}">⬆ Schwerer: ${esc(harder.name)}</button>` : ""}
+      </div>` : ""}`;
     card.querySelector(".btn-add").addEventListener("click", () => addExerciseToPlan(ex.id));
     card.querySelector('[data-act="fav"]').addEventListener("click", () => toggleFavorite(ex.id));
+    card.querySelector('[data-act="sketch"]')?.addEventListener("click", () => openSketch(ex));
+    card.querySelector('[data-act="sketch-view"]')?.addEventListener("click", () => openSketch(ex));
+    card.querySelectorAll("[data-variant]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const target = allExercises().find((e) => e.id === btn.dataset.variant);
+        if (!target) return;
+        $("#f-search").value = target.name;
+        $("#f-category").value = "";
+        $("#f-level").value = "";
+        renderLibrary();
+      }));
     if (isCustom) {
       card.querySelector('[data-act="edit"]').addEventListener("click", () => openExerciseDialog(ex));
       card.querySelector('[data-act="delete"]').addEventListener("click", async () => {
@@ -787,6 +1065,33 @@ function renderLibrary() {
   }
 }
 
+// ═══════════ Übungs-Skizzen ═══════════
+
+function openSketch(ex) {
+  SketchEditor.open({
+    title: "Skizze: " + ex.name,
+    existing: exerciseImages[ex.id] || null,
+    onSave: async (dataUrl) => {
+      if (!canWrite) return;
+      try {
+        await api("PUT", "api/exercise-images/" + ex.id, { data: dataUrl });
+        exerciseImages[ex.id] = dataUrl;
+        renderLibrary();
+        toast("Skizze gespeichert.");
+      } catch (err) {
+        toast("Skizze konnte nicht gespeichert werden: " + err.message);
+      }
+    },
+    onDelete: async () => {
+      if (!canWrite) return;
+      await api("DELETE", "api/exercise-images/" + ex.id);
+      delete exerciseImages[ex.id];
+      renderLibrary();
+      toast("Skizze entfernt.");
+    },
+  });
+}
+
 function toggleFavorite(exerciseId) {
   favorites = favorites.includes(exerciseId)
     ? favorites.filter((id) => id !== exerciseId)
@@ -806,6 +1111,19 @@ function openExerciseDialog(ex = null) {
   $("#ex-players").value = ex ? ex.spieler : 2;
   $("#ex-duration").value = ex ? ex.dauer : 10;
   $("#ex-desc").value = ex ? ex.beschreibung : "";
+  $("#ex-public").checked = !!ex?.oeffentlich;
+
+  // Varianten-Dropdowns mit allen Übungen füllen (ohne die Übung selbst)
+  for (const [selectId, current] of [["ex-easier", ex?.leichter], ["ex-harder", ex?.schwerer]]) {
+    const select = document.getElementById(selectId);
+    select.innerHTML = `<option value="">– keine –</option>` +
+      allExercises()
+        .filter((e) => e.id !== editingExerciseId)
+        .sort((a, b) => a.name.localeCompare(b.name, "de"))
+        .map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("");
+    select.value = current || "";
+  }
+
   document.getElementById("dlg-exercise").showModal();
 }
 
@@ -819,6 +1137,9 @@ async function handleExerciseSubmit(e) {
     spieler: Number($("#ex-players").value) || 1,
     dauer: Number($("#ex-duration").value) || 10,
     beschreibung: $("#ex-desc").value.trim(),
+    leichter: $("#ex-easier").value || null,
+    schwerer: $("#ex-harder").value || null,
+    oeffentlich: $("#ex-public").checked,
   };
   if (!ex.name) return;
 
@@ -844,6 +1165,96 @@ async function downloadBackup() {
   a.download = "vibeyball-backup-" + new Date().toISOString().slice(0, 10) + ".json";
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+async function importBackup(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    toast("Datei ist kein gültiges VibeyBall-Backup.");
+    return;
+  }
+  if (!Array.isArray(data.sessions) && !Array.isArray(data.exercises)) {
+    toast("Datei ist kein gültiges VibeyBall-Backup.");
+    return;
+  }
+  const counts = await api("POST", "api/import", data);
+  await loadWorkspaceData();
+  renderListView();
+  toast(`Import abgeschlossen: ${counts.sessions} Sessions, ${counts.exercises} Übungen, ` +
+    `${counts.templates} Vorlagen, ${counts.blocks} Blöcke, ${counts.images} Skizzen.`, { duration: 9000 });
+}
+
+// ═══════════ Trainerteam-Dialog ═══════════
+
+async function openTeamDialog() {
+  $("#team-error").classList.add("hidden");
+  const members = await api("GET", "api/team");
+  renderTeamList(members);
+  document.getElementById("dlg-team").showModal();
+}
+
+function renderTeamList(members) {
+  const list = $("#team-list");
+  list.innerHTML = members.length ? "" : `<p class="empty-hint">Noch niemand eingeladen.</p>`;
+  for (const m of members) {
+    const row = document.createElement("div");
+    row.className = "tpl-row";
+    row.innerHTML = `
+      <div class="tpl-pick block-row">
+        <span class="tpl-name">${esc(m.name)}</span>
+        <span class="tpl-meta">${esc(m.email)}</span>
+      </div>
+      <select class="team-role-select">
+        <option value="read" ${m.role === "read" ? "selected" : ""}>Lesen</option>
+        <option value="edit" ${m.role === "edit" ? "selected" : ""}>Bearbeiten</option>
+      </select>
+      <button class="btn-icon danger" title="Aus dem Team entfernen">🗑️</button>`;
+    row.querySelector("select").addEventListener("change", async (e) => {
+      await api("PUT", "api/team/" + m.id, { role: e.target.value });
+      toast(`Rolle von ${m.name} geändert.`);
+    });
+    row.querySelector(".btn-icon").addEventListener("click", async () => {
+      await api("DELETE", "api/team/" + m.id);
+      row.remove();
+      toast(`${m.name} aus dem Team entfernt.`);
+    });
+    list.appendChild(row);
+  }
+}
+
+async function handleTeamInvite(e) {
+  e.preventDefault();
+  try {
+    await api("POST", "api/team", { email: $("#team-email").value.trim(), role: $("#team-role").value });
+    $("#team-email").value = "";
+    $("#team-error").classList.add("hidden");
+    renderTeamList(await api("GET", "api/team"));
+  } catch (err) {
+    $("#team-error").textContent = err.message;
+    $("#team-error").classList.remove("hidden");
+  }
+}
+
+// ═══════════ Konto: Passwort ändern ═══════════
+
+async function handleAccountSubmit(e) {
+  e.preventDefault();
+  try {
+    await api("POST", "api/change-password", {
+      current: $("#acc-current").value,
+      next: $("#acc-next").value,
+    });
+    $("#acc-current").value = "";
+    $("#acc-next").value = "";
+    $("#account-error").classList.add("hidden");
+    document.getElementById("dlg-account").close();
+    toast("Passwort geändert.");
+  } catch (err) {
+    $("#account-error").textContent = err.message;
+    $("#account-error").classList.remove("hidden");
+  }
 }
 
 // ═══════════ Teilen ═══════════
@@ -896,14 +1307,60 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   $("#btn-new-cancel").addEventListener("click", () => document.getElementById("dlg-new-session").close());
   $("#btn-backup").addEventListener("click", downloadBackup);
+  $("#btn-import").addEventListener("click", () => $("#import-file").click());
+  $("#import-file").addEventListener("change", (e) => {
+    if (e.target.files[0]) importBackup(e.target.files[0]);
+    e.target.value = "";
+  });
   $("#tab-sessions").addEventListener("click", () => { listTab = "sessions"; renderListView(); });
   $("#tab-stats").addEventListener("click", () => { listTab = "stats"; renderListView(); });
+
+  // Matchtage
+  $("#btn-new-match").addEventListener("click", () => openMatchDialog());
+  $("#match-form").addEventListener("submit", handleMatchSubmit);
+  $("#btn-match-cancel").addEventListener("click", () => document.getElementById("dlg-match").close());
+
+  // Saisonblöcke
+  $("#btn-blocks").addEventListener("click", () => { renderBlocksDialog(); document.getElementById("dlg-blocks").showModal(); });
+  $("#block-form").addEventListener("submit", handleBlockSubmit);
+  $("#btn-blocks-close").addEventListener("click", () => {
+    document.getElementById("dlg-blocks").close();
+    renderListView(); // Badges/Statistik können sich geändert haben
+  });
+
+  // Nachbereitung
+  $("#review-form").addEventListener("submit", handleReviewSubmit);
+  $("#btn-review-skip").addEventListener("click", () => document.getElementById("dlg-review").close());
+  $("#btn-review-edit").addEventListener("click", () => openReviewDialog(currentSession()));
+  document.querySelectorAll("#review-stars button").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const v = Number(btn.dataset.v);
+      reviewRating = reviewRating === v ? 0 : v; // erneuter Klick auf gleichen Stern löscht Bewertung
+      renderReviewStars();
+    }));
+
+  // Trainerteam & Konto
+  $("#btn-team").addEventListener("click", openTeamDialog);
+  $("#team-form").addEventListener("submit", handleTeamInvite);
+  $("#btn-team-close").addEventListener("click", () => document.getElementById("dlg-team").close());
+  $("#workspace-select").addEventListener("change", (e) => switchWorkspace(e.target.value));
+  $("#btn-account").addEventListener("click", () => document.getElementById("dlg-account").showModal());
+  $("#account-form").addEventListener("submit", handleAccountSubmit);
+  $("#btn-account-cancel").addEventListener("click", () => document.getElementById("dlg-account").close());
+
+  // Skizzen-Editor
+  SketchEditor.init();
+
+  // PWA: Service Worker registrieren (nur über http/https, nicht bei file://)
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* offline-Funktion ist optional */ });
+  }
 
   // Editor
   $("#btn-back").addEventListener("click", showListView);
   $("#btn-template").addEventListener("click", saveAsTemplate);
   $("#btn-duplicate").addEventListener("click", () => duplicateSession(currentSession()));
-  $("#btn-pdf").addEventListener("click", () => generateSessionPdf(currentSession(), resolveExercise));
+  $("#btn-pdf").addEventListener("click", () => generateSessionPdf(currentSession(), resolveExercise, exerciseImages));
   $("#btn-series").addEventListener("click", () => document.getElementById("dlg-series").showModal());
   $("#btn-share").addEventListener("click", openShareDialog);
   $("#save-status").addEventListener("click", () => {

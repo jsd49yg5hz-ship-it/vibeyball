@@ -35,7 +35,43 @@
     return { time, name: CONTENT_W - time - cat - dur, cat, dur };
   }
 
-  window.generateSessionPdf = function (session, exerciseLookup) {
+  // Bild für jsPDF aufbereiten: SVG-Skizzen werden über ein Canvas zu PNG,
+  // Rasterbilder (Upload) direkt verwendet. Liefert {data, format, ratio (h/w)}.
+  function prepareImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onerror = reject;
+      if (dataUrl.startsWith("data:image/svg")) {
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 540; canvas.height = 1020; // Seitenverhältnis der Feld-Skizze (360×680)
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve({ data: canvas.toDataURL("image/jpeg", 0.85), format: "JPEG", ratio: canvas.height / canvas.width });
+        };
+      } else {
+        img.onload = () => resolve({
+          data: dataUrl,
+          format: dataUrl.includes("image/png") ? "PNG" : "JPEG",
+          ratio: img.naturalHeight / img.naturalWidth,
+        });
+      }
+      img.src = dataUrl;
+    });
+  }
+
+  window.generateSessionPdf = async function (session, exerciseLookup, images = {}) {
+    // Skizzen der verwendeten Übungen vorbereiten (asynchron, vor dem Zeichnen)
+    const prepared = {};
+    for (const item of session.items) {
+      const src = images[item.exerciseId];
+      if (src && !prepared[item.exerciseId]) {
+        try { prepared[item.exerciseId] = await prepareImage(src); } catch { /* Bild überspringen */ }
+      }
+    }
+
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const hasTime = !!session.uhrzeit;
@@ -152,7 +188,19 @@
       doc.setFontSize(8);
       const descLines = ex.beschreibung ? doc.splitTextToSize(ex.beschreibung, nameW) : [];
       const noteLines = item.notiz ? doc.splitTextToSize("Notiz: " + item.notiz, nameW) : [];
-      const rowH = Math.max(10, 7 + descLines.length * 3.4 + noteLines.length * 3.4 + (descLines.length || noteLines.length ? 2 : 0));
+
+      // Skizze: Höhe max. 42 mm, Breite max. 55 mm, Seitenverhältnis erhalten
+      const img = prepared[item.exerciseId];
+      let imgW = 0, imgH = 0;
+      if (img) {
+        imgH = 42;
+        imgW = imgH / img.ratio;
+        if (imgW > 55) { imgW = 55; imgH = imgW * img.ratio; }
+      }
+
+      const rowH = Math.max(10,
+        7 + descLines.length * 3.4 + noteLines.length * 3.4 +
+        (descLines.length || noteLines.length ? 2 : 0) + (img ? imgH + 3 : 0));
 
       if (y + rowH > PAGE.h - 18) newPage();
 
@@ -181,6 +229,12 @@
         doc.setFont("helvetica", "italic");
         doc.setTextColor(...COLORS.text);
         for (const line of noteLines) { doc.text(line, x, ty); ty += 3.4; }
+      }
+      if (img) {
+        doc.addImage(img.data, img.format, x, ty, imgW, imgH);
+        doc.setDrawColor(...COLORS.hairline);
+        doc.setLineWidth(0.2);
+        doc.rect(x, ty, imgW, imgH);
       }
       x += col.name;
 

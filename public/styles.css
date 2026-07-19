@@ -479,6 +479,86 @@ dialog label {
   .check-row { align-self: start; padding-bottom: 0; }
 }
 
+/* ═══════════ Nur-Lese-Modus (Trainerteam mit Rolle «Lesen») ═══════════ */
+body.read-only .write-only { display: none !important; }
+body.read-only #view-editor input,
+body.read-only #view-editor select,
+body.read-only #view-editor textarea { pointer-events: none; opacity: .7; }
+body.read-only .plan-item .item-actions,
+body.read-only .plan-item .drag-handle,
+body.read-only .tag-select,
+body.read-only #f-done,
+body.read-only .btn-add,
+body.read-only .btn-icon.star { pointer-events: none; opacity: .5; }
+
+/* ═══════════ Header: Workspace & Konto ═══════════ */
+.workspace-select {
+  width: auto; font-size: .82rem; padding: 6px 8px;
+  background: rgba(255, 255, 255, .12); color: #fff;
+  border-color: rgba(255, 255, 255, .3); border-radius: var(--radius-sm);
+}
+.workspace-select option { color: var(--text); background: var(--panel); }
+
+/* ═══════════ Matchtage ═══════════ */
+.match-card { border-left-color: #b08d2f; }
+.badge.match-badge { background: rgba(176, 141, 47, .16); color: #a1802a; }
+:root[data-theme="dark"] .badge.match-badge { color: #e5c56b; background: rgba(229, 197, 107, .14); }
+
+/* ═══════════ Nachbereitung ═══════════ */
+.review-line { color: var(--muted); font-size: .82rem; margin-top: 6px; }
+.review-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: .88rem; }
+.star-row { display: flex; gap: 2px; margin: 4px 0 12px; }
+.star-row button {
+  border: none; background: none; font-size: 1.7rem; cursor: pointer;
+  color: var(--border); padding: 0 2px; transition: color .1s, transform .1s;
+}
+.star-row button.active { color: var(--accent); }
+.star-row button:hover { transform: scale(1.15); }
+
+/* ═══════════ Saisonblöcke ═══════════ */
+.tag.block-tag { background: rgba(37, 99, 235, .1); color: #2563eb; border-color: transparent; }
+:root[data-theme="dark"] .tag.block-tag { color: #93b4f8; background: rgba(147, 180, 248, .12); }
+.block-form { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 14px; }
+.block-row { cursor: default; }
+
+/* ═══════════ Trainerteam ═══════════ */
+.team-form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; margin-bottom: 12px; }
+.team-role-select { width: auto; font-size: .85rem; padding: 6px 8px; }
+
+/* ═══════════ Übungs-Skizzen ═══════════ */
+.ex-body { display: flex; gap: 10px; align-items: flex-start; }
+.ex-thumb {
+  width: 64px; max-height: 110px; object-fit: contain; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer;
+}
+.dlg-sketch { width: min(430px, calc(100vw - 40px)); }
+.sketch-tools { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.sketch-tools button {
+  border: 1px solid var(--border); background: var(--panel-soft); border-radius: 8px;
+  font-size: 1rem; padding: 6px 10px; cursor: pointer;
+}
+.sketch-tools button.active { border-color: var(--accent); background: var(--accent-soft); }
+.sketch-canvas {
+  width: 100%; max-height: 52vh; display: block; border: 1px solid var(--border);
+  border-radius: 8px; touch-action: none; background: #f8f5ee;
+}
+.sketch-upload-row { font-size: .82rem; color: var(--muted); margin-top: 10px; display: block; }
+.sketch-upload-row input { margin-top: 4px; }
+.sketch-existing { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.sketch-existing img { width: 90px; max-height: 120px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.danger-text { color: #ef4444; }
+
+/* ═══════════ Varianten ═══════════ */
+.ex-variants { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.variant-link {
+  border: none; background: none; padding: 0; font-size: .78rem; font-weight: 600;
+  color: var(--accent-text); cursor: pointer; text-decoration: underline dotted;
+}
+.variant-link:hover { text-decoration: underline; }
+.tag.shared-tag { background: rgba(13, 148, 136, .12); color: #0d9488; border-color: transparent; }
+:root[data-theme="dark"] .tag.shared-tag { color: #5eead4; background: rgba(94, 234, 212, .12); }
+.dlg-check { margin-top: 4px; }
+
 /* ═══════════ Scrollbar (dezent, thematisch) ═══════════ */
 .exercise-list::-webkit-scrollbar { width: 8px; }
 .exercise-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }

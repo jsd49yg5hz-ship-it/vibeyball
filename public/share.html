@@ -112,6 +112,7 @@
               <span class="name">${esc(item.name)}</span>
               ${time ? `<span class="time-range">${time}</span>` : ""}
               <span class="cat"> · ${esc(item.kategorie)} · ${item.dauer} min</span>
+              ${s.images?.[item.exerciseId] ? `<img class="ex-thumb" src="${s.images[item.exerciseId]}" alt="Skizze">` : ""}
               <div class="ex-desc">${esc(item.beschreibung)}</div>
               ${item.notiz ? `<div class="ex-desc"><em>Notiz: ${esc(item.notiz)}</em></div>` : ""}
             </span>
@@ -124,7 +125,9 @@
       }
 
       $("#btn-pdf").addEventListener("click", () =>
-        generateSessionPdf(s, (item) => ({ name: item.name, kategorie: item.kategorie, beschreibung: item.beschreibung })));
+        generateSessionPdf(s,
+          (item) => ({ name: item.name, kategorie: item.kategorie, beschreibung: item.beschreibung }),
+          s.images || {}));
 
       $("#share-loading").classList.add("hidden");
       $("#share-content").classList.remove("hidden");

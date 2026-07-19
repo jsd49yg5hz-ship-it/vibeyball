@@ -94,6 +94,18 @@ async function run() {
   await page.locator("#f-tags .tag-chip", { hasText: "Annahme" }).click();
   await page.check("#f-done");
 
+  // ── Punkt 2 & 10: Nachbereitung mit Bewertung und Anwesenheit ──
+  await page.waitForSelector("#dlg-review[open]");
+  check("Nachbereitungs-Dialog öffnet beim Ausführen", true);
+  await page.locator('#review-stars [data-v="4"]').click();
+  await page.fill("#review-present", "9");
+  await page.fill("#review-total", "12");
+  await page.fill("#review-note", "Mehr Aufschlagdruck");
+  await page.click('#review-form button[type="submit"]');
+  await page.locator("#dlg-review[open]").waitFor({ state: "hidden" });
+  const reviewText = await page.textContent("#review-text");
+  check("Editor zeigt Nachbereitung", reviewText.includes("★★★★☆") && reviewText.includes("9/12"));
+
   // Übungen hinzufügen
   for (const q of ["Lauf-ABC", "Annahme nach Aufschlag", "Baggern an der Wand"]) {
     await page.fill("#f-search", q);
@@ -188,6 +200,213 @@ async function run() {
   await page.waitForSelector("#view-editor:not(.hidden)");
   const [pdf] = await Promise.all([page.waitForEvent("download"), page.click("#btn-pdf")]);
   check("PDF-Download", (pdf.suggestedFilename() || "").endsWith(".pdf"));
+  await page.click("#btn-back");
+  await page.waitForSelector("#view-list:not(.hidden)");
+
+  // ── Punkt 2/10: Nachbereitung auf der Karte sichtbar ──
+  const doneCardText = (await page.locator(".session-card.is-done", { hasText: "Testtraining" }).first().textContent()) || "";
+  check("Karte zeigt Bewertung und Anwesenheit", doneCardText.includes("★★★★☆") && doneCardText.includes("9/12"));
+
+  // ── Punkt 6: Matchtag erfassen und bearbeiten ──
+  await page.click("#btn-new-match");
+  await page.waitForSelector("#dlg-match[open]");
+  await page.fill("#match-opponent", "VBC Winterthur");
+  await page.fill("#match-result", "3:1");
+  await page.fill("#match-team", "Damen 1");
+  await page.click('#match-form button[type="submit"]');
+  await page.locator("#dlg-match[open]").waitFor({ state: "hidden" });
+  const matchCardLoc = page.locator(".match-card", { hasText: "VBC Winterthur" });
+  check("Match-Karte sichtbar mit Resultat", ((await matchCardLoc.textContent()) || "").includes("3:1"));
+  await matchCardLoc.click();
+  await page.waitForSelector("#dlg-match[open]");
+  check("Match-Dialog lädt Werte zum Bearbeiten", (await page.inputValue("#match-opponent")) === "VBC Winterthur");
+  await page.fill("#match-result", "3:2");
+  await page.click('#match-form button[type="submit"]');
+  await page.locator("#dlg-match[open]").waitFor({ state: "hidden" });
+  check("Match-Bearbeitung gespeichert", ((await matchCardLoc.textContent()) || "").includes("3:2"));
+
+  // ── Punkt 4: Saisonblock anlegen, Badge + Statistik-Filter ──
+  const today = new Date();
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekAhead = new Date(today); weekAhead.setDate(weekAhead.getDate() + 7);
+  await page.click("#btn-blocks");
+  await page.waitForSelector("#dlg-blocks[open]");
+  await page.fill("#block-name", "Saisonvorbereitung");
+  await page.fill("#block-from", iso(weekAgo));
+  await page.fill("#block-to", iso(weekAhead));
+  await page.fill("#block-goal", "Annahme stabilisieren");
+  await page.click('#block-form button[type="submit"]');
+  await page.locator("#blocks-list .tpl-row", { hasText: "Saisonvorbereitung" }).waitFor();
+  await page.click("#btn-blocks-close");
+  const badgeCard = (await page.locator(".session-card", { hasText: "Testtraining" }).first().textContent()) || "";
+  check("Session-Karte zeigt Saisonblock-Badge", badgeCard.includes("Saisonvorbereitung"));
+  await page.click("#tab-stats");
+  await page.waitForSelector("#stats-panel:not(.hidden)");
+  await page.selectOption("#stats-block", { label: "📅 Saisonvorbereitung" });
+  const blockStats = (await page.textContent("#stats-panel")) || "";
+  check("Statistik filtert nach Block (Ziel sichtbar)", blockStats.includes("Annahme stabilisieren"));
+  await page.selectOption("#stats-block", "");
+  await page.click("#tab-sessions");
+
+  // ── Punkt 7: Übungsvarianten (leichter/schwerer) ──
+  await page.locator(".session-card", { hasText: "Testtraining" }).first().click();
+  await page.waitForSelector("#view-editor:not(.hidden)");
+  const baggernItem = page.locator(".plan-item", { hasText: "Baggern an der Wand" });
+  await baggernItem.locator('[data-act="harder"]').click();
+  await page.locator(".plan-item", { hasText: "Partnerbaggern" }).waitFor();
+  check("Plan-Item auf schwerere Variante gewechselt", true);
+  await page.fill("#f-search", "Partnerbaggern");
+  const variantLinks = (await page.locator(".exercise-card .ex-variants").first().textContent()) || "";
+  check("Bibliothek zeigt Varianten-Links", variantLinks.includes("Leichter") && variantLinks.includes("Schwerer"));
+
+  // ── Punkt 1: Skizze zeichnen und speichern ──
+  await page.fill("#f-search", "Lauf-ABC");
+  await page.locator('.exercise-card [data-act="sketch"]').first().click();
+  await page.waitForSelector("#dlg-sketch[open]");
+  await page.locator('#sketch-tools [data-tool="p"]').click();
+  const canvas = page.locator("#sketch-canvas");
+  await canvas.click({ position: { x: 100, y: 150 } });
+  await canvas.click({ position: { x: 160, y: 200 } });
+  await page.locator('#sketch-tools [data-tool="a"]').click();
+  await canvas.click({ position: { x: 100, y: 300 } });
+  await canvas.click({ position: { x: 200, y: 380 } });
+  await page.click("#btn-sketch-save");
+  await page.locator(".toast", { hasText: "Skizze gespeichert" }).waitFor();
+  await page.locator(".exercise-card .ex-thumb").first().waitFor();
+  check("Skizze gespeichert und Thumbnail sichtbar", true);
+  // Skizze wieder öffnen → Objekte editierbar geladen
+  await page.locator('.exercise-card [data-act="sketch"]').first().click();
+  await page.waitForSelector("#dlg-sketch[open]");
+  const objectCount = await page.locator("#sketch-canvas [data-idx]").count();
+  check("Skizze ist wieder editierbar (3 Objekte)", objectCount === 3);
+  await page.click("#btn-sketch-cancel");
+  // PDF mit Skizze
+  await page.fill("#f-search", "");
+  const [pdfImg] = await Promise.all([page.waitForEvent("download"), page.click("#btn-pdf")]);
+  check("PDF mit Skizze generiert", (pdfImg.suggestedFilename() || "").endsWith(".pdf"));
+
+  // ── Punkt 5: Übung mit allen Coaches teilen ──
+  await page.click("#btn-new-exercise");
+  await page.fill("#ex-name", "Geteilter Drill");
+  await page.fill("#ex-desc", "Für alle Coaches sichtbar.");
+  await page.check("#ex-public");
+  await page.click('#exercise-form button[type="submit"]');
+  await page.waitForTimeout(400);
+
+  // ── Punkt 9: Trainerteam (zweiter Coach, Rolle Lesen) ──
+  const invite2 = createInviteCode();
+  const ctxB = await browser.newContext({ viewport: { width: 1280, height: 1400 } });
+  const pageB = await ctxB.newPage();
+  pageB.on("pageerror", (e) => pageErrors.push("B: " + e.message));
+  await pageB.goto(BASE);
+  await pageB.click("#tab-register");
+  await pageB.fill("#auth-name", "Co-Trainerin Berta");
+  await pageB.fill("#auth-email", "berta@example.ch");
+  await pageB.fill("#auth-password", "geheim5678");
+  await pageB.fill("#auth-invite", invite2);
+  await pageB.click("#auth-submit");
+  await pageB.waitForSelector("#view-list:not(.hidden)");
+
+  // Punkt 5 aus Sicht von B: geteilte Übung in der Bibliothek
+  await pageB.click("#btn-new-session");
+  await pageB.waitForSelector("#view-editor:not(.hidden)");
+  await pageB.fill("#f-search", "Geteilter Drill");
+  const sharedTag = (await pageB.locator(".exercise-card", { hasText: "Geteilter Drill" }).textContent()) || "";
+  check("Geteilte Übung bei anderem Coach sichtbar", sharedTag.includes("geteilt von Coach Test"));
+  await pageB.click("#btn-back");
+
+  // A lädt B mit Rolle «Lesen» ein
+  await page.click("#btn-team");
+  await page.waitForSelector("#dlg-team[open]");
+  await page.fill("#team-email", "berta@example.ch");
+  await page.selectOption("#team-role", "read");
+  await page.click('#team-form button[type="submit"]');
+  await page.locator("#team-list .tpl-row", { hasText: "Berta" }).waitFor();
+  check("Team-Einladung erstellt", true);
+  await page.click("#btn-team-close");
+
+  // B wechselt in As Workspace (Reload lädt die Mitgliedschaft)
+  await pageB.reload();
+  await pageB.waitForSelector("#view-list:not(.hidden)");
+  await pageB.waitForSelector("#workspace-select:not(.hidden)");
+  await pageB.selectOption("#workspace-select", { label: "Team von Coach Test (Lesen)" });
+  await pageB.locator(".session-card", { hasText: "Testtraining" }).first().waitFor();
+  check("Co-Trainerin sieht Sessions des Teams", true);
+  check("Nur-Lese-Modus versteckt Schreib-Knöpfe", !(await pageB.locator("#btn-new-session").isVisible()));
+  const writeBlocked = await pageB.evaluate(async () => {
+    const sessions = await fetch("api/sessions", { headers: { "X-Workspace": "1" } }).then((r) => r.json());
+    const res = await fetch("api/sessions/" + sessions[0].id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Workspace": "1" },
+      body: JSON.stringify(sessions[0]),
+    });
+    return res.status;
+  });
+  check("Server blockiert Schreiben mit Rolle «Lesen» (403)", writeBlocked === 403);
+
+  // ── Punkt 3: Passwort in der App ändern ──
+  await page.click("#btn-account");
+  await page.waitForSelector("#dlg-account[open]");
+  await page.fill("#acc-current", "geheim1234");
+  await page.fill("#acc-next", "neuespass99");
+  await page.click('#account-form button[type="submit"]');
+  await page.locator(".toast", { hasText: "Passwort geändert" }).waitFor();
+  await page.click("#btn-logout");
+  await page.waitForSelector("#view-auth:not(.hidden)");
+  await page.fill("#auth-email", "coach@example.ch");
+  await page.fill("#auth-password", "geheim1234");
+  await page.click("#auth-submit");
+  await page.waitForSelector("#auth-error:not(.hidden)");
+  check("Altes Passwort funktioniert nicht mehr", true);
+  await page.fill("#auth-password", "neuespass99");
+  await page.click("#auth-submit");
+  await page.waitForSelector("#view-list:not(.hidden)");
+  check("Neues Passwort funktioniert", true);
+
+  // ── Punkt 3: Passwort per CLI zurücksetzen ──
+  const cliOut = require("child_process").execSync(
+    `node ${path.join(__dirname, "..", "scripts", "reset-password.js")} berta@example.ch cliPasswort1`,
+    { env: { ...process.env, DATA_DIR } }
+  ).toString();
+  check("CLI-Reset meldet Erfolg", cliOut.includes("zurückgesetzt"));
+  const cliLogin = await fetch(BASE + "/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "berta@example.ch", password: "cliPasswort1" }),
+  });
+  check("Login mit CLI-Passwort funktioniert", cliLogin.status === 200);
+
+  // ── Punkt 12: Backup-Import stellt gelöschte Session wieder her ──
+  const [backup2] = await Promise.all([page.waitForEvent("download"), page.click("#btn-backup")]);
+  const backup2Path = path.join(DATA_DIR, "backup2.json");
+  await backup2.saveAs(backup2Path);
+  const tCountBefore = await page.locator(".session-card", { hasText: "Testtraining" }).count();
+  await page.locator(".session-card", { hasText: "Testtraining" }).first()
+    .locator('[data-act="del"]').click();
+  await page.locator(".toast", { hasText: "gelöscht" }).waitFor();
+  await page.waitForTimeout(6500); // Undo-Toast ablaufen lassen
+  check("Session vor Import gelöscht",
+    (await page.locator(".session-card", { hasText: "Testtraining" }).count()) === tCountBefore - 1);
+  await page.locator("#import-file").setInputFiles(backup2Path);
+  await page.locator(".toast", { hasText: "Import abgeschlossen" }).waitFor();
+  await page.waitForTimeout(600);
+  check("Import stellt Session wieder her",
+    (await page.locator(".session-card", { hasText: "Testtraining" }).count()) === tCountBefore);
+
+  // ── Punkt 11: PWA (Manifest, Service Worker) ──
+  const manifestOk = (await fetch(BASE + "/manifest.webmanifest")).status === 200;
+  const swOk = (await fetch(BASE + "/sw.js")).status === 200;
+  const iconOk = (await fetch(BASE + "/icons/icon-192.png")).status === 200;
+  check("PWA-Dateien werden ausgeliefert", manifestOk && swOk && iconOk);
+  const swRegistered = await page.evaluate(async () => {
+    if (!("serviceWorker" in navigator)) return false;
+    const reg = await navigator.serviceWorker.getRegistration();
+    return !!reg;
+  });
+  check("Service Worker registriert", swRegistered);
+
+  await ctxB.close();
 
   check("Keine JavaScript-Fehler auf der Seite", pageErrors.length === 0);
   if (pageErrors.length) console.log("  Fehler:", pageErrors.join("; "));

@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VibeyBall – Volleyball-Trainingsplaner</title>
+  <meta name="theme-color" content="#16203c">
+  <link rel="manifest" href="manifest.webmanifest">
   <script>
     // Theme vor dem Rendern setzen (gespeicherte Wahl oder Systemeinstellung)
     document.documentElement.dataset.theme = localStorage.getItem("vb-theme") ||
@@ -29,7 +31,9 @@
     <div class="header-right">
       <button class="btn btn-header btn-theme" id="btn-theme" title="Hell/Dunkel umschalten">🌙</button>
       <div id="user-box" class="user-box hidden">
-        <span id="user-name"></span>
+        <select id="workspace-select" class="workspace-select hidden" title="Trainerteam wechseln"></select>
+        <button class="btn btn-header" id="btn-team" title="Trainerteam verwalten">👥</button>
+        <button class="btn btn-header" id="btn-account" title="Konto / Passwort ändern"><span id="user-name"></span></button>
         <button class="btn btn-header" id="btn-logout">Abmelden</button>
       </div>
     </div>
@@ -69,8 +73,12 @@
         <button class="tab" id="tab-stats">Statistik</button>
       </div>
       <div class="toolbar-actions">
+        <button class="btn" id="btn-blocks" title="Saisonblöcke verwalten">📅 Saison</button>
         <button class="btn" id="btn-backup" title="Alle Daten als JSON-Datei sichern">⬇ Backup</button>
-        <button class="btn btn-primary" id="btn-new-session">+ Neue Session</button>
+        <button class="btn write-only" id="btn-import" title="Backup-Datei wiederherstellen">⬆ Import</button>
+        <input type="file" id="import-file" accept="application/json" class="hidden">
+        <button class="btn write-only" id="btn-new-match" title="Matchtag erfassen">🏆 Match</button>
+        <button class="btn btn-primary write-only" id="btn-new-session">+ Neue Session</button>
       </div>
     </div>
     <div id="session-list" class="session-list"></div>
@@ -128,6 +136,13 @@
           <div class="span-2">
             <span class="field-label">Fokus</span>
             <div class="tag-select" id="f-tags"></div>
+          </div>
+          <div class="span-2 hidden" id="review-box">
+            <span class="field-label">Nachbereitung</span>
+            <div class="review-summary">
+              <span id="review-text"></span>
+              <button type="button" class="btn write-only" id="btn-review-edit">Bearbeiten</button>
+            </div>
           </div>
           <label class="span-2">Notizen
             <textarea id="f-notes" rows="2" placeholder="Material, Abwesenheiten, Hinweise …"></textarea>
@@ -198,11 +213,172 @@
       <label>Beschreibung
         <textarea id="ex-desc" rows="4" placeholder="Aufbau, Ablauf, Coaching-Punkte …"></textarea>
       </label>
+      <div class="dlg-row">
+        <label>Leichtere Variante
+          <select id="ex-easier"><option value="">– keine –</option></select>
+        </label>
+        <label>Schwerere Variante
+          <select id="ex-harder"><option value="">– keine –</option></select>
+        </label>
+      </div>
+      <label class="check-row dlg-check">
+        <input type="checkbox" id="ex-public">
+        <span>Mit allen Coaches auf dieser Instanz teilen</span>
+      </label>
       <div class="dlg-actions">
         <button type="button" class="btn" id="btn-ex-cancel">Abbrechen</button>
         <button type="submit" class="btn btn-primary">Speichern</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Nachbereitung ═══════════ -->
+  <dialog id="dlg-review">
+    <form id="review-form" method="dialog">
+      <h3>Training nachbereiten</h3>
+      <div>
+        <span class="field-label">Wie lief das Training?</span>
+        <div class="star-row" id="review-stars">
+          <button type="button" data-v="1">★</button><button type="button" data-v="2">★</button><button type="button" data-v="3">★</button><button type="button" data-v="4">★</button><button type="button" data-v="5">★</button>
+        </div>
+      </div>
+      <div class="dlg-row">
+        <label>Anwesende Spieler
+          <input type="number" id="review-present" min="0" max="30" placeholder="z. B. 9">
+        </label>
+        <label>Kadergrösse
+          <input type="number" id="review-total" min="0" max="30" placeholder="z. B. 12">
+        </label>
+      </div>
+      <label>Beim nächsten Mal …
+        <textarea id="review-note" rows="3" placeholder="Was übernehmen wir, was ändern wir?"></textarea>
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn" id="btn-review-skip">Überspringen</button>
+        <button type="submit" class="btn btn-primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Matchtag ═══════════ -->
+  <dialog id="dlg-match">
+    <form id="match-form" method="dialog">
+      <h3 id="dlg-match-title">Matchtag erfassen</h3>
+      <label>Gegner *
+        <input type="text" id="match-opponent" required placeholder="z. B. VBC Winterthur">
+      </label>
+      <div class="dlg-row">
+        <label>Datum
+          <input type="date" id="match-date">
+        </label>
+        <label>Startzeit
+          <input type="time" id="match-time">
+        </label>
+      </div>
+      <div class="dlg-row">
+        <label>Ort
+          <input type="text" id="match-location" placeholder="z. B. auswärts, Halle X">
+        </label>
+        <label>Resultat
+          <input type="text" id="match-result" placeholder="z. B. 3:1">
+        </label>
+      </div>
+      <label>Mannschaft
+        <input type="text" id="match-team" placeholder="z. B. Damen 1">
+      </label>
+      <label>Notizen
+        <textarea id="match-notes" rows="3" placeholder="Aufstellung, Erkenntnisse …"></textarea>
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn" id="btn-match-cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Saisonblöcke ═══════════ -->
+  <dialog id="dlg-blocks">
+    <h3>Saisonblöcke</h3>
+    <p class="dlg-hint">Trainings werden über ihr Datum automatisch dem passenden Block zugeordnet.</p>
+    <div id="blocks-list" class="tpl-list"></div>
+    <form id="block-form" class="block-form">
+      <label>Name *
+        <input type="text" id="block-name" required placeholder="z. B. Saisonvorbereitung">
+      </label>
+      <div class="dlg-row">
+        <label>Von
+          <input type="date" id="block-from" required>
+        </label>
+        <label>Bis
+          <input type="date" id="block-to" required>
+        </label>
+      </div>
+      <label>Blockziel
+        <input type="text" id="block-goal" placeholder="z. B. Annahme stabilisieren">
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn" id="btn-blocks-close">Schliessen</button>
+        <button type="submit" class="btn btn-primary write-only">Block hinzufügen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Trainerteam ═══════════ -->
+  <dialog id="dlg-team">
+    <h3>Trainerteam</h3>
+    <p class="dlg-hint">Eingeladene Coaches sehen alle deine Sessions, Vorlagen und Übungen –
+      mit Rolle «Bearbeiten» dürfen sie auch Änderungen machen.</p>
+    <form id="team-form" class="team-form">
+      <input type="email" id="team-email" required placeholder="E-Mail des Coaches">
+      <select id="team-role">
+        <option value="read">Lesen</option>
+        <option value="edit">Bearbeiten</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Einladen</button>
+    </form>
+    <p id="team-error" class="auth-error hidden"></p>
+    <div id="team-list" class="tpl-list"></div>
+    <div class="dlg-actions">
+      <button class="btn" id="btn-team-close">Schliessen</button>
+    </div>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Konto / Passwort ═══════════ -->
+  <dialog id="dlg-account">
+    <form id="account-form" method="dialog">
+      <h3>Passwort ändern</h3>
+      <label>Aktuelles Passwort
+        <input type="password" id="acc-current" autocomplete="current-password" required>
+      </label>
+      <label>Neues Passwort
+        <input type="password" id="acc-next" autocomplete="new-password" required minlength="8" placeholder="mind. 8 Zeichen">
+      </label>
+      <p id="account-error" class="auth-error hidden"></p>
+      <div class="dlg-actions">
+        <button type="button" class="btn" id="btn-account-cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Ändern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ═══════════ Dialog: Skizze ═══════════ -->
+  <dialog id="dlg-sketch" class="dlg-sketch">
+    <h3 id="sketch-title">Skizze</h3>
+    <div id="sketch-existing-upload" class="hidden sketch-existing">
+      <img id="sketch-upload-preview" alt="Aktuelles Bild">
+      <p class="dlg-hint">Aktuell ist ein hochgeladenes Bild hinterlegt. Zeichnen oder ein neues Bild hochladen ersetzt es.</p>
+    </div>
+    <div id="sketch-tools" class="sketch-tools"></div>
+    <svg id="sketch-canvas" viewBox="0 0 360 680" class="sketch-canvas"></svg>
+    <label class="sketch-upload-row">
+      Oder Bild hochladen:
+      <input type="file" id="sketch-file" accept="image/*">
+    </label>
+    <div class="dlg-actions">
+      <button class="btn danger-text hidden" id="btn-sketch-delete">Skizze entfernen</button>
+      <button class="btn" id="btn-sketch-cancel">Abbrechen</button>
+      <button class="btn btn-primary" id="btn-sketch-save">Zeichnung speichern</button>
+    </div>
   </dialog>
 
   <!-- ═══════════ Dialog: Serie ═══════════ -->
@@ -250,6 +426,7 @@
   <script src="vendor/jspdf.umd.min.js"></script>
   <script src="exercises.js"></script>
   <script src="pdf.js"></script>
+  <script src="sketch.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "invite": "node scripts/invite.js",
-    "test": "node tests/e2e.js"
+    "test": "node tests/e2e.js",
+    "reset-password": "node scripts/reset-password.js"
   },
   "license": "ISC",
   "dependencies": {
