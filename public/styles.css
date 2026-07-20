@@ -304,6 +304,7 @@ input:focus, select:focus, textarea:focus {
 
 /* ═══════════ Dialoge ═══════════ */
 dialog {
+  margin: auto; /* zentrieren – der globale Reset (* { margin: 0 }) überschreibt sonst das Browser-Standardverhalten */
   border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: 0 14px 50px rgba(0, 0, 0, .35);
   padding: 24px; width: min(440px, calc(100vw - 40px));
