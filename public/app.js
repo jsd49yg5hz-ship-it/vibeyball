@@ -385,9 +385,8 @@ function renderSessionList() {
       <div class="card-footer">
         <span>
           <span class="badge">${s.items.length} Übungen · ${totalDuration(s)} min</span>
-          ${s.ausgefuehrt ? `<span class="badge done">✓ Ausgeführt</span>` : ""}
         </span>
-        <span class="write-only">
+        <span class="write-only card-actions">
           <button class="btn-icon done-toggle ${s.ausgefuehrt ? "is-done" : ""}" data-act="done"
             title="${s.ausgefuehrt ? "Als nicht ausgeführt markieren" : "Als ausgeführt markieren"}">✓</button>
           <button class="btn-icon" data-act="dup" title="Duplizieren">📋</button>

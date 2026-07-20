@@ -168,8 +168,9 @@ body {
 .session-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
 .session-card .meta { color: var(--muted); font-size: .85rem; }
 .session-card .card-footer {
-  display: flex; justify-content: space-between; align-items: center; margin-top: 12px;
+  display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 8px;
 }
+.card-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; white-space: nowrap; }
 
 .badge {
   background: var(--accent-soft);
@@ -357,8 +358,6 @@ dialog label {
 .check-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: #16a34a; cursor: pointer; }
 .check-row span { font-size: .88rem; color: var(--text); font-weight: 500; }
 
-.badge.done { background: rgba(22, 163, 74, .14); color: #16a34a; margin-left: 6px; }
-:root[data-theme="dark"] .badge.done { color: #4ade80; background: rgba(74, 222, 128, .14); }
 .done-toggle {
   border: 1px solid var(--border); border-radius: 999px;
   width: 26px; height: 26px; line-height: 1; font-weight: 700;
@@ -642,7 +641,6 @@ dialog[open]::backdrop { animation: backdrop-in .22s ease-out; }
 .save-status { transition: color .25s, opacity .25s; }
 .toast { animation: toast-in .25s cubic-bezier(.2, .9, .3, 1.15); }
 .tag-chip:has(input:checked) { animation: pop .25s ease-out; }
-.badge.done { animation: pop .3s ease-out; }
 
 /* Barrierefreiheit: Bewegungen respektvoll abschalten */
 @media (prefers-reduced-motion: reduce) {
