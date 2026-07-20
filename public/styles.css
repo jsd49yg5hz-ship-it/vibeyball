@@ -400,6 +400,11 @@ dialog label {
 .share-notes { margin-top: 16px; font-size: .9rem; color: var(--muted); }
 .share-notes strong { color: var(--text); }
 
+/* ═══════════ Fertig-Knopf im Editor ═══════════ */
+.btn-done { border-color: #16a34a; color: #16a34a; font-weight: 700; }
+.btn-done:hover { background: rgba(22, 163, 74, .1); }
+:root[data-theme="dark"] .btn-done { border-color: #4ade80; color: #4ade80; }
+
 /* ═══════════ Speicher-Indikator ═══════════ */
 .toolbar-left { display: flex; align-items: center; gap: 12px; }
 .save-status { font-size: .82rem; border: none; background: none; padding: 0; font-family: inherit; }
